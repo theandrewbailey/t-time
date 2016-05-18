@@ -74,7 +74,7 @@ function updateActiveSchedules(){
 	var route=routes[currentRouteTables.id];
 	var newMillis=nowDate.getTime();
 	forEach.call(currentRouteTables.querySelectorAll(".active"),function(table){
-		var name=table.caption.innerText;
+		var name=table.caption.textContent;
 		if(predictedSchedule){
 			table.classList.add("predicted");
 		}
@@ -84,7 +84,7 @@ function updateActiveSchedules(){
 		var stoptimes={}
 		forEach.call(stopnames,function(stopname){
 			var headelement=document.createElement("th");
-			headelement.innerText=stopname[0];
+			headelement.textContent=stopname[0];
 			headelement.dataset["stopid"]=stopname[1];
 			thead.appendChild(headelement);
 			stoptimes[stopname[0]]=[];
@@ -134,7 +134,7 @@ function updateActiveSchedules(){
 			if(0==tbody.childNodes.length){
 				table.classList.add("hide");
 				forEach.call(table.parentNode.getElementsByClassName("active"),function(table){
-					if(name==table.getElementsByTagName("caption").item(0).innerText){
+					if(name==table.getElementsByTagName("caption").item(0).textContent){
 						table.classList.add("hide");
 					}
 				});
@@ -158,13 +158,13 @@ function updateStaticSchedules(forDate){
 		staticSchedules.appendChild(table);
 		forEach.call(Object.keys(route["schedules"]),function(schedulename){
 			if(-1<scheds.indexOf(schedulename)){
-				var name=table.caption.innerText;
+				var name=table.caption.textContent;
 				var thead=table.createTHead();
 				var tbody=table.tBodies.item(0);
 				var stopnames=route["stops"][name];
 				forEach.call(stopnames,function(stopname){
 					var headelement=document.createElement("th");
-					headelement.innerText=stopname[0];
+					headelement.textContent=stopname[0];
 					headelement.dataset["stopid"]=stopname[1];
 					thead.appendChild(headelement);
 				});
@@ -186,7 +186,7 @@ function updateStaticSchedules(forDate){
 				if(0==tbody.childNodes.length){
 					table.classList.add("hide");
 					forEach.call(table.parentNode.getElementsByClassName("active"),function(table){
-						if(name==table.getElementsByTagName("caption").item(0).innerText){
+						if(name==table.getElementsByTagName("caption").item(0).textContent){
 							table.classList.add("hide");
 						}
 					});
@@ -236,7 +236,7 @@ function getStopNames(stopnames){
 }
 function createTable(caption,classNames){
 	var table=document.createElement("table");
-	table.createCaption().innerText=caption;
+	table.createCaption().textContent=caption;
 	forEach.call(classNames,function(classname){table.classList.add(classname);});
 	table.insertRow();
 	table.deleteRow(-1);
@@ -267,7 +267,7 @@ function createTimeCell(timeobj,altthis){
 		if(0==hours){
 			hours=_12hourClock?12:24;
 		}
-		td.innerText=hours+":"+("00"+timeobj.getMinutes()).slice(-2);
+		td.textContent=hours+":"+("00"+timeobj.getMinutes()).slice(-2);
 	}
 	return td;
 }
