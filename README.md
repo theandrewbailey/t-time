@@ -3,7 +3,21 @@ GTFS to HTML processor
 
 This Python script will take files from a [GTFS](https://developers.google.com/transit/gtfs/reference) feed and output a static SPA that contains a schedule for the routes selected. [(Demo)](https://theandrewbailey.github.io/t-time/PAAC.html)
 
-usage:
+## Output features
+
+  - routes will display at top
+  - click/tap route to display time info by destination
+  - times are color coded:
+     - red means the bus/train should be arriving right now
+     - orange is arriving in 5 minutes
+     - yellow is arriving in 10 minutes
+     - green is arriving in 20 minutes
+     - blue is arriving in 30 minutes
+  - schedule will automatically update every minute
+  - to see full schedule for a day, enter date and click "Show"
+  - if schedule is not available for a day, schedules for that day of the week will be shown, and a message will appear on the tables.
+
+## Usage
 
 1. download a feed
    - browse [TransitFeeds](https://transitfeeds.com/)
@@ -26,18 +40,6 @@ usage:
 4. copy the output HTML file where ever you'd like
     - it is self contained: all JS and CSS is contained within
 
-output file features:
-
-  - routes will display at top
-  - click/tap route to display time info by destination
-  - times are color coded:
-     - red means right now
-     - orange in 5 minutes
-     - yellow in 10 minutes
-     - green in 20 minutes
-     - blue in 30 minutes
-  - schedule will automatically update every minute
-  - to see full schedule for a day, enter date and click "Show"
-  - if schedule is not available for a day, schedules for that day of the week will be shown, and a message will appear on the tables.
+## Specifics
 
 This was developed against python 3.5 and the [Port Authority of Allegheny County's GTFS feed](http://www.portauthority.org/GeneralTransitFeed/). [PAAC.html](https://theandrewbailey.github.io/t-time/PAAC.html) is it's output.
