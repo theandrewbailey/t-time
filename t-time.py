@@ -12,11 +12,11 @@ from os import stat
 from sys import exit
 
 # select these routes, column "route_id" in routes.txt
-selectRoutes=("BLLB-160","BLSV-160","SPCL-160","RED-160")
+selectRoutes=("BLLB-161","BLSV-161","SPCL-161","RED-161")
 # stops that will never appear per route (stops will have IDs in their <th>)
-excludeStops={"SPCL-160":("X14472","X14000","X13850","X14075","X13900","X14540","X14467","X14490","X14495","X14468","X14550","X13905","X14080","X13855","X14005","X14474","X14405"),
-              "BLLB-160":("X14467","X14468"),
-              "BLSV-160":("X14467","X14468")}
+excludeStops={"SPCL-161":("X14472","X14000","X13850","X14075","X13900","X14540","X14467","X14490","X14495","X14468","X14550","X13905","X14080","X13855","X14005","X14474","X14405"),
+              "BLLB-161":("X14467","X14468"),
+              "BLSV-161":("X14467","X14468")}
 # stops that will have their times counted down (or all of them)
 activeStops={}
 # use AM/PM or 24 hour time representation? because Python can't reliably tell this :(
@@ -191,7 +191,7 @@ try:
     with open("routes.txt",encoding="utf-8") as routesfile:
         routestxt=opencsv(routesfile)
         for routerow in routestxt:
-            if routerow["route_id"] in selectRoutes:
+            if selectRoutes is None or len(selectRoutes) is 0 or routerow["route_id"] in selectRoutes:
                 routes[routerow["route_id"]]=Route(routerow)
 except FileNotFoundError as ex:
     print("File "+ex.filename+" does not exist. This is an invalid feed, because this is a required file.")
@@ -336,13 +336,22 @@ tableTemplate="\t<div id='{0}' class='hide'>\n\t\t<h2>{1}</h2>\n{2}\t</div>\n"
 activeTemplate="\t\t<table class='active'><caption>{0}</caption><thead></thead><tbody></tbody></table>\n"
 tables=""
 css="<style>"
-for routeid in selectRoutes:
-    route=routes[routeid]
-    routeSelect+="\t\t<li><a href='#' data-route='{1}'>{0}</a></li>\n".format(route.shortname,route.id)
-    routetables=""
-    for line in route.stops:
-        routetables+=activeTemplate.format(line)
-    tables+=tableTemplate.format(route.id,route.longname,routetables)
+if selectRoutes is None or len(selectRoutes) is 0:
+	for routeid in routes.keys():
+		route=routes[routeid]
+		routeSelect+="\t\t<li><a href='#' data-route='{1}'>{0}</a></li>\n".format(route.shortname,route.id)
+		routetables=""
+		for line in route.stops:
+			routetables+=activeTemplate.format(line)
+		tables+=tableTemplate.format(route.id,route.longname,routetables)
+else:
+	for routeid in selectRoutes:
+		route=routes[routeid]
+		routeSelect+="\t\t<li><a href='#' data-route='{1}'>{0}</a></li>\n".format(route.shortname,route.id)
+		routetables=""
+		for line in route.stops:
+			routetables+=activeTemplate.format(line)
+		tables+=tableTemplate.format(route.id,route.longname,routetables)
 outputVars["routeSelect"]=routeSelect
 outputVars["javascript"]="var routes={1};\nvar dates={0};\n".format(dates.__str__(),routes.__str__())
 outputVars["routeDisplay"]=tables

@@ -98,8 +98,10 @@ function updateActiveSchedules(){
 						forEach.call(trip.stops,function(stop){
 							var idx=stopnames.indexOf(stop["name"]);
 							if(-1<idx){
-								if(newMillis<stop["datetime"].getTime()){
-									stoptimes[stop["name"]].push(stop["datetime"]);
+								var sdt=stop["datetime"].getTime();
+								var ssn=stoptimes[stop["name"]];
+								if(newMillis<sdt&&-1==ssn.indexOf(sdt)){
+									ssn.push(sdt);
 									timesExist=true;
 								}
 							}
@@ -111,7 +113,7 @@ function updateActiveSchedules(){
 								}else if("string"==typeof(b)){
 									return -1;
 								}
-								return a.getTime()-b.getTime();
+								return a-b;
 							});
 						});
 					}
@@ -176,7 +178,7 @@ function updateStaticSchedules(forDate){
 						forEach.call(trip.stops,function(stop){
 							var idx=stopnames.indexOf(stop["name"]);
 							if(-1<idx){
-								times[idx]=stop.datetime;
+								times[idx]=stop.datetime.getTime();
 							}
 						});
 						var row=tbody.insertRow();
@@ -253,9 +255,10 @@ function setStopTimesForDay(theDay){
 		});
 	});
 }
-function createTimeCell(timeobj,altthis){
+function createTimeCell(time,altthis){
 	var td=typeof(altthis)=="number"?this.insertCell():altthis.insertCell();
-	if("object"==typeof(timeobj)){ // Date object
+	if("number"==typeof(time)){ // Date millis
+		var timeobj=new Date(time);
 		td.classList.add("countdown"+Math.trunc((timeobj.getTime()-referenceDate.getTime())/60000));
 		var hours=timeobj.getHours();
 		if(_12hourClock){
