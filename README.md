@@ -4,6 +4,7 @@ GTFS to HTML processor
 This Python script will take files from a [GTFS](https://developers.google.com/transit/gtfs/reference) feed and output a static SPA that contains a schedule for the routes selected. [(Demo)](https://theandrewbailey.github.io/t-time/PAAC.html)
 
 usage:
+
 1. download a feed
    - browse [TransitFeeds](https://transitfeeds.com/)
    - consult your local mass transit organization's developer resources
@@ -26,6 +27,7 @@ usage:
     - it is self contained: all JS and CSS is contained within
 
 output file features:
+
   - routes will display at top
   - click/tap route to display time info by destination
   - times are color coded:
