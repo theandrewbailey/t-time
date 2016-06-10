@@ -1,21 +1,25 @@
 # t-time
-GTFS to HTML processor
+GTFS to HTML time table processor
 
 This Python script will take files from a [GTFS](https://developers.google.com/transit/gtfs/reference) feed and output a static SPA that contains a schedule for the routes selected. [(Demo)](https://theandrewbailey.github.io/t-time/PAAC.html)
 
+Every time I used [the T](https://en.wikipedia.org/wiki/Pittsburgh_Light_Rail), I would look at PDFs on my phone. This is me trying to do better.
+
 ## Output features
 
-  - routes will display at top
-  - click/tap route to display time info by destination
+  - full offline functionality (static HTML app)
+  - routes displayed at top
+     - click/tap route to display time info by destination
   - times are color coded:
      - red means the bus/train should be arriving right now
      - orange is arriving in 5 minutes
      - yellow is arriving in 10 minutes
      - green is arriving in 20 minutes
      - blue is arriving in 30 minutes
+  - PM times are in **bold**
   - schedule will automatically update every minute
-  - to see full schedule for a day, enter date and click "Show"
-  - if schedule is not available for a day, schedules for that day of the week will be shown, and a message will appear on the tables.
+  - to see full schedule for a day, enter date at bottom and click "Show"
+  - if schedule is not available for that specific day, schedule for that day of the week will be shown, and a message will appear on the tables.
 
 ## Usage
 
