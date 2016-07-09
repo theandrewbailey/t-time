@@ -11,12 +11,14 @@ from string import Template
 from os import stat
 from sys import exit
 
-# select these routes, column "route_id" in routes.txt
-selectRoutes=("BLLB-161","BLSV-161","SPCL-161","RED-161")
+# routes will be referred to by this column from routes.txt
+routeIdColumn="route_short_name"
+# select these routes
+selectRoutes=("BLLB","BLSV","SPCL","RED")
 # stops that will never appear per route (stops will have IDs in their <th>)
-excludeStops={"SPCL-161":("X14472","X14000","X13850","X14075","X13900","X14540","X14467","X14490","X14495","X14468","X14550","X13905","X14080","X13855","X14005","X14474","X14405"),
-              "BLLB-161":("X14467","X14468"),
-              "BLSV-161":("X14467","X14468")}
+excludeStops={"SPCL":("X14472","X14000","X13850","X14075","X13900","X14540","X14467","X14490","X14495","X14468","X14550","X13905","X14080","X13855","X14005","X14474","X14405"),
+              "BLLB":("X14467","X14468"),
+              "BLSV":("X14467","X14468")}
 # stops that will have their times counted down (or all of them)
 activeStops={}
 # use AM/PM or 24 hour time representation? because Python can't reliably tell this :(
@@ -32,6 +34,7 @@ schedules={}
 trips={}
 stops={}
 routes={}
+routesByName={}
 schedules=[]
 template=""
 
@@ -58,26 +61,23 @@ class Route:
     def __init__(self, csvreader):
         self.schedules={}
         self.id=csvreader["route_id"]
-        self.agency=routerow["agency_id"] if "agency_id" in routerow else agency
-        self.shortname=routerow["route_short_name"]
+        self.agency=csvreader["agency_id"] if "agency_id" in csvreader else agency
+        self.shortname=csvreader["route_short_name"]
         self.longname=csvreader["route_long_name"]
+        self.referredTo=csvreader[routeIdColumn]
         self.stops={}
-        #self.stopids={}
+        self.accountedFor={}
     def finalize(self):
-        accountedFor={}
         for sched in self.schedules.values():
             for trip in sched:
                 if trip.direction not in self.stops:
                     self.stops[trip.direction]=[]
-                    accountedFor[trip.direction]=[]
-                #if trip.direction not in self.stopids:
-                #    self.stopids[trip.direction]={}
+                    self.accountedFor[trip.direction]=[]
                 for stop in trip.stops:
-                    if stops[stop.stopid] not in accountedFor[trip.direction]:
+                    if stops[stop.stopid] not in self.accountedFor[trip.direction]:
+                        # maybe put these in some sort of order?
                         self.stops[trip.direction].append([stops[stop.stopid],stop.stopid])
-                        accountedFor[trip.direction].append(stops[stop.stopid])
-                    #if stops[stop.stopid] not in self.stopids[trip.direction]:
-                    #    self.stopids[trip.direction][stops[stop.stopid]]=stop.stopid
+                        self.accountedFor[trip.direction].append(stops[stop.stopid])
     def __repr__(self):
         return self.__str__()
     def __str__(self):
@@ -100,8 +100,9 @@ class Trip:
         self.stops.append(stop)
     def finalize(self):
         """exclude stops and determine time for trip as a whole, for sorting purposes"""
+        routename=routes[self.route].referredTo
         for stopobj in self.stops[:]:
-            if self.route in excludeStops and stopobj.stopid in excludeStops[self.route]:
+            if routename in excludeStops and stopobj.stopid in excludeStops[routename]:
                 self.stops.remove(stopobj)
         self.stops.sort()
         if self.stops[0]:
@@ -133,13 +134,20 @@ class Trip:
     def __repr__(self):
         return self.__str__()
     def __str__(self):
+        orderedstops=[]
+        for orderstop in routes[self.route].accountedFor[self.direction]:
+            found=False
+            for stop in self.stops:
+                if orderstop==stops[stop.stopid]:
+                    orderedstops.append(stop.time)
+                    found=True
+                    break
+            if not found:
+                orderedstops.append('\x00')
         return str(
-            {#"route":self.route,
-             #"service":self.service,
-             #"trip":self.trip,
+            {
              "direction":self.direction,
-             "stops":self.stops})
-             #"time":self.time})
+             "stops":orderedstops})
 
 class Stop:
     def __init__(self, csvreader):
@@ -163,7 +171,6 @@ class Stop:
     def __str__(self):
         global stops
         return str({
-            #"stopid":self.stopid,
             "name":stops[self.stopid],
             "time":self.time})
 
@@ -191,8 +198,10 @@ try:
     with open("routes.txt",encoding="utf-8") as routesfile:
         routestxt=opencsv(routesfile)
         for routerow in routestxt:
-            if selectRoutes is None or len(selectRoutes) is 0 or routerow["route_id"] in selectRoutes:
-                routes[routerow["route_id"]]=Route(routerow)
+            if selectRoutes is None or len(selectRoutes) is 0 or routerow[routeIdColumn] in selectRoutes:
+                newroute=Route(routerow)
+                routes[newroute.id]=newroute
+                routesByName[newroute.referredTo]=newroute
 except FileNotFoundError as ex:
     print("File "+ex.filename+" does not exist. This is an invalid feed, because this is a required file.")
     exit(65)
@@ -332,28 +341,19 @@ print("Schedules assigned")
 
 outputVars={"title":agency,"headerTitle":agency,"_12hourClock":str(_12hourClock).lower(),"generationDate":datetime.datetime.now().isoformat()}
 routeSelect=""
-tableTemplate="\t<div id='{0}' class='hide'>\n\t\t<h2>{1}</h2>\n{2}\t</div>\n"
+tableTemplate="\t<section id='{0}'>\n\t\t<h2>{1}</h2>\n{2}\t</section>\n"
 activeTemplate="\t\t<table class='active'><caption>{0}</caption><thead></thead><tbody></tbody></table>\n"
 tables=""
 css="<style>"
-if selectRoutes is None or len(selectRoutes) is 0:
-	for routeid in routes.keys():
-		route=routes[routeid]
-		routeSelect+="\t\t<li><a href='#' data-route='{1}'>{0}</a></li>\n".format(route.shortname,route.id)
-		routetables=""
-		for line in route.stops:
-			routetables+=activeTemplate.format(line)
-		tables+=tableTemplate.format(route.id,route.longname,routetables)
-else:
-	for routeid in selectRoutes:
-		route=routes[routeid]
-		routeSelect+="\t\t<li><a href='#' data-route='{1}'>{0}</a></li>\n".format(route.shortname,route.id)
-		routetables=""
-		for line in route.stops:
-			routetables+=activeTemplate.format(line)
-		tables+=tableTemplate.format(route.id,route.longname,routetables)
+for routename in selectRoutes if len(selectRoutes)>0 else routesByName.keys():
+    route=routesByName[routename]
+    routeSelect+="\t<input type='radio' name='line' value='{1}' id='tab-{1}'/><label for='tab-{1}'>{0}</label>\n".format(route.shortname,route.id)
+    routetables=""
+    for line in sorted(route.stops.keys()):
+        routetables+=activeTemplate.format(line)
+    tables+=tableTemplate.format(route.id,route.longname,routetables)
 outputVars["routeSelect"]=routeSelect
-outputVars["javascript"]="var routes={1};\nvar dates={0};\n".format(dates.__str__(),routes.__str__())
+outputVars["javascript"]="var routes={1};\nvar dates={0};\n".format(dates.__str__(),routes.__str__().replace("'\\x00'","null"))
 outputVars["routeDisplay"]=tables
 
 # read CSS to combine into HTML

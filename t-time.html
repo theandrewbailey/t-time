@@ -8,10 +8,8 @@
 	<link rel="stylesheet" href="t-time.css" />
 </head><body>
 <main role="main">
-	<ul id="routeSelect">
-${routeSelect}	</ul>
-	<div id="routeDisplay">
-${routeDisplay}	</div>
+${routeSelect}
+${routeDisplay}
 	<form id="dateForm" class="hide">
 		<fieldset>
 			<legend>Full schedule</legend>
@@ -27,16 +25,13 @@ var forEach=Array.prototype.forEach;
 var referenceDate=null;
 var updateTimerID=null;
 document.addEventListener("DOMContentLoaded",function(){
-	forEach.call(document.querySelectorAll("#routeSelect a"),function(e){
-		e.addEventListener("click",function(e){
-			e.preventDefault();
-			hideAllRoutes();
+	forEach.call(document.querySelectorAll("input[name=line]"),function(e){
+		e.addEventListener("change",function(e){
 			deleteAllChildren(document.getElementById("staticSchedules"));
-			document.getElementById(this.dataset.route).classList.remove("hide");
-			e.target.classList.add("selectedRoute");
-			updateActiveSchedules();
+			updateActiveSchedules(e);
 		});
 	});
+	updateActiveSchedules();
 	updateTimerID=window.setInterval(updateActiveSchedules,60000);
 });
 document.getElementById('dateForm').addEventListener("submit",function(e){
@@ -49,7 +44,7 @@ document.getElementById('dateForm').addEventListener("submit",function(e){
 	updateStaticSchedules(selectedDate);
 });
 // will be called repeatedly to update times
-function updateActiveSchedules(){
+function updateActiveSchedules(event){
 	var nowDate=new Date();
 	resetSelector(nowDate);
 	// new day, so update times
@@ -67,7 +62,7 @@ function updateActiveSchedules(){
 	if(predictedSchedule){
 		scheds=dates[referenceDate.getDay()];
 	}
-	var currentRouteTables=document.querySelectorAll("#routeDisplay>div:not(.hide)").item(0);
+	var currentRouteTables=document.getElementById(document.querySelector("input[name='line']:checked").value);
 	if(null==currentRouteTables){
 		return;
 	}
@@ -96,6 +91,7 @@ function updateActiveSchedules(){
 				forEach.call(route["schedules"][schedulename],function(trip){
 					if(trip["direction"]==name){
 						forEach.call(trip.stops,function(stop){
+							if(null==stop){return;}
 							var idx=stopnames.indexOf(stop["name"]);
 							if(-1<idx){
 								var sdt=stop["datetime"].getTime();
@@ -152,7 +148,7 @@ function updateStaticSchedules(forDate){
 		scheds=dates[forDate.getDay()];
 	}
 	setStopTimesForDay(forDate);
-	var selectedRoute=document.querySelectorAll("#routeDisplay>div:not(.hide)").item(0).id;
+	var selectedRoute=document.querySelector("input[name='line']:checked").value;
 	var route=routes[selectedRoute];
 	var staticSchedules=deleteAllChildren(document.getElementById("staticSchedules"));
 	forEach.call(Object.keys(route["stops"]),function(destination){
@@ -176,6 +172,7 @@ function updateStaticSchedules(forDate){
 						var times=new Array(stopnames.length);
 						times.fill("");
 						forEach.call(trip.stops,function(stop){
+							if(null==stop){return;}
 							var idx=stopnames.indexOf(stop["name"]);
 							if(-1<idx){
 								times[idx]=stop.datetime.getTime();
@@ -210,14 +207,6 @@ function resetSelector(dateObj){
 		ds.valueAsDate=dateObj;
 	}
 }
-function hideAllRoutes(){
-	forEach.call(document.querySelectorAll("#routeDisplay>div"),function(div){
-		div.classList.add("hide");
-	});
-	forEach.call(document.querySelectorAll("#routeSelect a"),function(element){
-		element.classList.remove("selectedRoute");
-	});
-}
 function deleteAllChildren(element){
 	while(element.firstChild){
 		element.removeChild(element.firstChild);
@@ -249,7 +238,14 @@ function setStopTimesForDay(theDay){
 		forEach.call(Object.keys(routes[key]["schedules"]),function(schedulename){
 			forEach.call(routes[key]["schedules"][schedulename],function(trip){
 				forEach.call(trip.stops,function(stop){
-					stop.datetime=cloneDateWithTimeString(theDay,stop["time"]);
+					if("string"==typeof(stop)){
+						// initialize stop object
+						var idx=trip.stops.indexOf(stop);
+						stop={"time":stop,"datetime":cloneDateWithTimeString(theDay,stop),"name":routes[key]["stops"][trip.direction][idx][0]};
+						trip.stops[idx]=stop;
+					}else if(null!=stop){
+						stop.datetime=cloneDateWithTimeString(theDay,stop["time"]);
+					}
 				});
 			});
 		});
