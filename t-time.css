@@ -51,6 +51,8 @@ body,div,span,section,h1,h2,h3,nav,a,form,time,fieldset,caption,thead,tbody,th,t
   padding: 0.1em 0.3em 0.2em 0.3em;
   line-height: 1.2em;
   border-right: 1px solid #020A1D;
+}td.empty{
+  padding: 0em 0em 0em 0em;
 }tr:first-child>td{
   border-top: 1px solid #020A1D;
 }th:last-child,td:last-child{
@@ -93,73 +95,73 @@ body,div,span,section,h1,h2,h3,nav,a,form,time,fieldset,caption,thead,tbody,th,t
   color: hsl(240,10%,90%);
 }.pm{
   font-weight: bold;
-}.active .countdown0{
+}main>section>table>tbody>tr>td.countdown0{
   color: hsl(0,95%,50%);
-}.active .countdown1{
+}main>section>table>tbody>tr>td.countdown1{
   color: hsl(6,95%,50%);
-}.active .countdown2{
+}main>section>table>tbody>tr>td.countdown2{
   color: hsl(12,95%,55%);
-}.active .countdown3{
+}main>section>table>tbody>tr>td.countdown3{
   color: hsl(18,95%,60%);
-}.active .countdown4{
+}main>section>table>tbody>tr>td.countdown4{
   color: hsl(24,90%,65%);
-}.active .countdown5{
+}main>section>table>tbody>tr>td.countdown5{
   color: hsl(30,80%,70%);
-}.active .countdown6{
+}main>section>table>tbody>tr>td.countdown6{
   color: hsl(36,80%,70%);
-}.active .countdown7{
+}main>section>table>tbody>tr>td.countdown7{
   color: hsl(42,80%,70%);
-}.active .countdown8{
+}main>section>table>tbody>tr>td.countdown8{
   color: hsl(48,80%,70%);
-}.active .countdown9{
+}main>section>table>tbody>tr>td.countdown9{
   color: hsl(56,80%,70%);
-}.active .countdown10{
+}main>section>table>tbody>tr>td.countdown10{
   color: hsl(60,80%,70%);
-}.active .countdown11{
+}main>section>table>tbody>tr>td.countdown11{
   color: hsl(66,80%,70%);
-}.active .countdown12{
+}main>section>table>tbody>tr>td.countdown12{
   color: hsl(72,80%,70%);
-}.active .countdown13{
+}main>section>table>tbody>tr>td.countdown13{
   color: hsl(78,80%,70%);
-}.active .countdown14{
+}main>section>table>tbody>tr>td.countdown14{
   color: hsl(84,80%,70%);
-}.active .countdown15{
+}main>section>table>tbody>tr>td.countdown15{
   color: hsl(90,80%,70%);
-}.active .countdown16{
+}main>section>table>tbody>tr>td.countdown16{
   color: hsl(96,80%,70%);
-}.active .countdown17{
+}main>section>table>tbody>tr>td.countdown17{
   color: hsl(102,80%,70%);
-}.active .countdown18{
+}main>section>table>tbody>tr>td.countdown18{
   color: hsl(108,80%,70%);
-}.active .countdown19{
+}main>section>table>tbody>tr>td.countdown19{
   color: hsl(116,80%,70%);
-}.active .countdown20{
+}main>section>table>tbody>tr>td.countdown20{
   color: hsl(120,80%,70%);
-}.active .countdown21{
+}main>section>table>tbody>tr>td.countdown21{
   color: hsl(132,80%,70%);
-}.active .countdown22{
+}main>section>table>tbody>tr>td.countdown22{
   color: hsl(144,80%,70%);
-}.active .countdown23{
+}main>section>table>tbody>tr>td.countdown23{
   color: hsl(156,80%,70%);
-}.active .countdown24{
+}main>section>table>tbody>tr>td.countdown24{
   color: hsl(168,80%,70%);
-}.active .countdown25{
+}main>section>table>tbody>tr>td.countdown25{
   color: hsl(180,80%,70%);
-}.active .countdown26{
+}main>section>table>tbody>tr>td.countdown26{
   color: hsl(192,80%,70%);
-}.active .countdown27{
+}main>section>table>tbody>tr>td.countdown27{
   color: hsl(204,80%,70%);
-}.active .countdown28{
+}main>section>table>tbody>tr>td.countdown28{
   color: hsl(216,80%,70%);
-}.active .countdown29{
+}main>section>table>tbody>tr>td.countdown29{
   color: hsl(228,80%,70%);
-}.active .countdown30{
+}main>section>table>tbody>tr>td.countdown30{
   color: hsl(240,80%,70%);
-}.active .countdown31{
+}main>section>table>tbody>tr>td.countdown31{
   color: hsl(260,85%,80%);
-}.active .countdown32{
+}main>section>table>tbody>tr>td.countdown32{
   color: hsl(280,90%,90%);
-}.active .countdown33{
+}main>section>table>tbody>tr>td.countdown33{
   color: hsl(300,95%,100%);
 }@font-face{
   font-family: 'NotoSans';

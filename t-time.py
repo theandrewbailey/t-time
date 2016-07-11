@@ -69,15 +69,16 @@ class Route:
         self.accountedFor={}
     def finalize(self):
         for sched in self.schedules.values():
-            for trip in sched:
-                if trip.direction not in self.stops:
-                    self.stops[trip.direction]=[]
-                    self.accountedFor[trip.direction]=[]
-                for stop in trip.stops:
-                    if stops[stop.stopid] not in self.accountedFor[trip.direction]:
-                        # maybe put these in some sort of order?
-                        self.stops[trip.direction].append([stops[stop.stopid],stop.stopid])
-                        self.accountedFor[trip.direction].append(stops[stop.stopid])
+            for destination in sched.values():
+                for trip in destination:
+                    if trip.direction not in self.stops:
+                        self.stops[trip.direction]=[]
+                        self.accountedFor[trip.direction]=[]
+                    for stop in trip.stops:
+                        if stops[stop.stopid] not in self.accountedFor[trip.direction]:
+                            # maybe put these in some sort of order?
+                            self.stops[trip.direction].append([stops[stop.stopid],stop.stopid])
+                            self.accountedFor[trip.direction].append(stops[stop.stopid])
     def __repr__(self):
         return self.__str__()
     def __str__(self):
@@ -144,10 +145,10 @@ class Trip:
                     break
             if not found:
                 orderedstops.append('\x00')
-        return str(
-            {
-             "direction":self.direction,
-             "stops":orderedstops})
+        return str(orderedstops)
+        #    {
+        #     "direction":self.direction,
+        #     "stops":orderedstops})
 
 class Stop:
     def __init__(self, csvreader):
@@ -322,11 +323,13 @@ except BaseException as ex:
 for trip in trips.values():
     route=routes[trip.route]
     if trip.service not in route.schedules:
-        route.schedules[trip.service]=[]
+        route.schedules[trip.service]={}
     if trip.service not in schedules:
         schedules.append(trip.service)
     trip.finalize()
-    route.schedules[trip.service].append(trip)
+    if trip.direction not in route.schedules[trip.service]:
+        route.schedules[trip.service][trip.direction]=[]
+    route.schedules[trip.service][trip.direction].append(trip)
 # delete unneccessary schedules
 for dayschedules in dates.values():
     for schedule in dayschedules[:]:
@@ -335,19 +338,20 @@ for dayschedules in dates.values():
 # sort trips within route schedules
 for route in routes.values():
     for schedule in route.schedules.values():
-        schedule.sort()
+        for destination in schedule.values():
+            destination.sort()
     route.finalize()
 print("Schedules assigned")
 
 outputVars={"title":agency,"headerTitle":agency,"_12hourClock":str(_12hourClock).lower(),"generationDate":datetime.datetime.now().isoformat()}
 routeSelect=""
 tableTemplate="\t<section id='{0}'>\n\t\t<h2>{1}</h2>\n{2}\t</section>\n"
-activeTemplate="\t\t<table class='active'><caption>{0}</caption><thead></thead><tbody></tbody></table>\n"
+activeTemplate="\t\t<table><caption>{0}</caption><thead></thead><tbody></tbody></table>\n"
 tables=""
 css="<style>"
 for routename in selectRoutes if len(selectRoutes)>0 else routesByName.keys():
     route=routesByName[routename]
-    routeSelect+="\t<input type='radio' name='line' value='{1}' id='tab-{1}'/><label for='tab-{1}'>{0}</label>\n".format(route.shortname,route.id)
+    routeSelect+="\t<input type='radio' name='line' value='{1}' id='radio-{1}'/><label for='radio-{1}'>{0}</label>\n".format(route.shortname,route.id)
     routetables=""
     for line in sorted(route.stops.keys()):
         routetables+=activeTemplate.format(line)
