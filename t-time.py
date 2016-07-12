@@ -270,19 +270,19 @@ try:
         for calrow in caltxt:
             testdate=parsedate(calrow["start_date"])
             enddate=parsedate(calrow["end_date"])
-            if "1"==calrow["sunday"]:
+            if "1"==calrow["sunday"] and calrow["start_date"]!=calrow["end_date"]:
                 dates[0].append(calrow["service_id"])
-            if "1"==calrow["monday"]:
+            if "1"==calrow["monday"] and calrow["start_date"]!=calrow["end_date"]:
                 dates[1].append(calrow["service_id"])
-            if "1"==calrow["tuesday"]:
+            if "1"==calrow["tuesday"] and calrow["start_date"]!=calrow["end_date"]:
                 dates[2].append(calrow["service_id"])
-            if "1"==calrow["wednesday"]:
+            if "1"==calrow["wednesday"] and calrow["start_date"]!=calrow["end_date"]:
                 dates[3].append(calrow["service_id"])
-            if "1"==calrow["thursday"]:
+            if "1"==calrow["thursday"] and calrow["start_date"]!=calrow["end_date"]:
                 dates[4].append(calrow["service_id"])
-            if "1"==calrow["friday"]:
+            if "1"==calrow["friday"] and calrow["start_date"]!=calrow["end_date"]:
                 dates[5].append(calrow["service_id"])
-            if "1"==calrow["saturday"]:
+            if "1"==calrow["saturday"] and calrow["start_date"]!=calrow["end_date"]:
                 dates[6].append(calrow["service_id"])
             while testdate != enddate:
                 datestr=formatdate(testdate)

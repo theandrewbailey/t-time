@@ -30,29 +30,29 @@ document.addEventListener("DOMContentLoaded",function(){
 	forEach.call(document.querySelectorAll("input[name=line]"),function(e){
 		e.addEventListener("change",function(e){
 			deleteAllChildren(document.querySelector("form>fieldset>section"));
+			resetSelector(new Date());
 			updateActiveSchedules(e);
 		});
 	});
-	updateActiveSchedules();
+	if(updateActiveSchedules()){
+		resetSelector(new Date());
+	}
 	updateTimerID=window.setInterval(updateActiveSchedules,60000);
 });
 document.getElementById('dateForm').addEventListener("submit",function(e){
 	"use strict";
 	e.preventDefault();
 	var ds=document.getElementById('dateSelector');
-	var selectedDate=ds.valueAsDate;
-	if(null==selectedDate){
-		selectedDate=new Date(new Date(ds.value).getTime()+(new Date().getTimezoneOffset()*60000));
-	}
+	var dsv=new Date(ds.value);
+	var selectedDate=new Date(dsv.getTime()+(dsv.getTimezoneOffset()*60000));
 	updateStaticSchedules(selectedDate);
 });
 // will be called repeatedly to update times
 function updateActiveSchedules(event){
 	"use strict";
 	var radiobutton=document.querySelector("input[name='line']:checked");
-	if(null==radiobutton){return;}
+	if(null==radiobutton){return false;}
 	var nowDate=new Date();
-	resetSelector(nowDate);
 	// new day, so update times
 	if(referenceDate==null||nowDate.getDate()!=referenceDate.getDate()){
 		setStopTimesForDay(nowDate);
@@ -125,11 +125,7 @@ function updateActiveSchedules(event){
 				var row=tbody.insertRow();
 				forEach.call(stopnames,function(stopname){
 					var stoptime=stoptimes[stopname].shift();
-					if(null==stoptime){
-						createTimeCell("",row).classList.add("empty");
-					}else{
-						createTimeCell(stoptime,row);
-					}
+					createTimeCell(null==stoptime?"":stoptime,row);
 				});
 			});
 		}else{
@@ -139,6 +135,7 @@ function updateActiveSchedules(event){
 			}
 		}
 	});
+	return true;
 }
 function updateStaticSchedules(forDate){
 	"use strict";
@@ -152,7 +149,8 @@ function updateStaticSchedules(forDate){
 	var selectedRoute=document.querySelector("input[name='line']:checked").value;
 	var route=routes[selectedRoute];
 	var staticSchedules=deleteAllChildren(document.querySelector("form>fieldset>section"));
-	forEach.call(Object.keys(route["stops"]),function(destination){
+	forEach.call(document.getElementById(selectedRoute).getElementsByTagName("table"),function(destinationtable){
+		var destination=destinationtable.caption.textContent;
 		var table=createTable(destination,predictedSchedule?["predicted"]:[]);
 		var timesExist=false;
 		forEach.call(Object.keys(route["schedules"]),function(schedulename){
@@ -200,9 +198,6 @@ function resetSelector(dateObj){
 	var ds=document.getElementById('dateSelector');
 	ds.placeholder=prettyFormatDate(dateObj);
 	ds.value=prettyFormatDate(dateObj);
-	if(ds.valueAsDate){
-		ds.valueAsDate=dateObj;
-	}
 }
 function deleteAllChildren(element){
 	"use strict";
