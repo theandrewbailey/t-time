@@ -5,7 +5,7 @@
 # author: Andrew Bailey
 # I wanted a SPA to tell me when the next T ride would come.
 
-import csv,json,time,datetime
+import csv,json,time,datetime,email.utils
 from collections import OrderedDict
 from string import Template
 from os import stat
@@ -140,15 +140,12 @@ class Trip:
             found=False
             for stop in self.stops:
                 if orderstop==stops[stop.stopid]:
-                    orderedstops.append(stop.time)
+                    orderedstops.append(formatTime(stop.time))
                     found=True
                     break
             if not found:
                 orderedstops.append('\x00')
         return str(orderedstops)
-        #    {
-        #     "direction":self.direction,
-        #     "stops":orderedstops})
 
 class Stop:
     def __init__(self, csvreader):
@@ -270,6 +267,7 @@ try:
         for calrow in caltxt:
             testdate=parsedate(calrow["start_date"])
             enddate=parsedate(calrow["end_date"])
+			# sometimes there are schedules that should really be exceptions (since they are only valid for one day), and should not be confused with regular service
             if "1"==calrow["sunday"] and calrow["start_date"]!=calrow["end_date"]:
                 dates[0].append(calrow["service_id"])
             if "1"==calrow["monday"] and calrow["start_date"]!=calrow["end_date"]:
@@ -343,9 +341,9 @@ for route in routes.values():
     route.finalize()
 print("Schedules assigned")
 
-outputVars={"title":agency,"headerTitle":agency,"_12hourClock":str(_12hourClock).lower(),"generationDate":datetime.datetime.now().isoformat()}
+outputVars={"title":agency,"headerTitle":agency,"generationDate":email.utils.formatdate(localtime=True)}
 routeSelect=""
-tableTemplate="\t<section id='{0}'>\n\t\t<h2>{1}</h2>\n{2}\t</section>\n"
+tableTemplate="\t<section id='{0}'>\n\t\t<h1>{1}</h1>\n{2}\t</section>\n"
 activeTemplate="\t\t<table><caption>{0}</caption><thead></thead><tbody></tbody></table>\n"
 tables=""
 css="<style>"
@@ -356,17 +354,17 @@ for routename in selectRoutes if len(selectRoutes)>0 else routesByName.keys():
     for line in sorted(route.stops.keys()):
         routetables+=activeTemplate.format(line)
     tables+=tableTemplate.format(route.id,route.longname,routetables)
-outputVars["routeSelect"]=routeSelect
-outputVars["javascript"]="var routes={1};\nvar dates={0};\n".format(dates.__str__(),routes.__str__().replace("'\\x00'","null"))
-outputVars["routeDisplay"]=tables
+outputVars["html"]=routeSelect+tables
+outputVars["javascript"]="var dates={0};\nvar routes={1};\n_12hourClock={2};\n".format(dates.__str__(),routes.__str__().replace("'\\x00'","null"),str(_12hourClock).lower())
 
 # read CSS to combine into HTML
 try:
     with open("t-time.css","r",encoding="utf-8") as cssfile:
         for line in cssfile:
             css+=line
-except BaseException as ex:pass # Don't worry about it; I trust you know what you are doing
-css+="</style>"
+    css+="</style>"
+except BaseException as ex:
+    css=None
 # read template
 try:
     with open("t-time.html","r",encoding="utf-8") as templatefile:
@@ -378,7 +376,8 @@ except FileNotFoundError as ex:
 except BaseException as ex:
     print("There was a problem opening "+ex.filename+". This is the HTML template to export the data.")
     exit(66)
-template=template.replace('<link rel="stylesheet" href="t-time.css" />',css,1)
+if css != None:
+    template=template.replace('<link rel="stylesheet" href="t-time.css" />',css,1)
 templateObj=Template(template)
 # write HTML
 outputName=outputName+".html"
