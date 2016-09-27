@@ -14,9 +14,9 @@ from sys import exit
 # routes will be referred to by this column from routes.txt
 routeIdColumn="route_short_name"
 # select these routes
-selectRoutes=("BLLB","BLSV","SPCL","RED")
+selectRoutes=("BLLB","BLSV","RED")
 # stops that will never appear per route (stops will have IDs in their <th>)
-excludeStops={"SPCL":("X14472","X14000","X13850","X14075","X13900","X14540","X14467","X14490","X14495","X14468","X14550","X13905","X14080","X13855","X14005","X14474","X14405"),
+excludeStops={"RED":("X14472","X14000","X13850","X14075","X13900","X14540","X14467","X14490","X14495","X14468","X14550","X13905","X14080","X13855","X14005","X14474","X14405"),
               "BLLB":("X14467","X14468"),
               "BLSV":("X14467","X14468")}
 # stops that will have their times counted down (or all of them)
@@ -355,7 +355,7 @@ for routename in selectRoutes if len(selectRoutes)>0 else routesByName.keys():
         routetables+=activeTemplate.format(line)
     tables+=tableTemplate.format(route.id,route.longname,routetables)
 outputVars["html"]=routeSelect+tables
-outputVars["javascript"]="var dates={0};\nvar routes={1};\n_12hourClock={2};\n".format(dates.__str__(),routes.__str__().replace("'\\x00'","null"),str(_12hourClock).lower())
+outputVars["javascript"]="const dates={0};\nconst routes={1};\nconst _12hourClock={2};\n".format(dates.__str__(),routes.__str__().replace("'\\x00'","null"),str(_12hourClock).lower())
 
 # read CSS to combine into HTML
 try:
