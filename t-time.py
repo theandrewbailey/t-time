@@ -28,15 +28,7 @@ outputName=None
 # <title> contents
 agency=None
 
-day=datetime.timedelta(days=1)
-dates={0:[],1:[],2:[],3:[],4:[],5:[],6:[]}
-schedules={}
-trips={}
-stops={}
-routes={}
-routesByName={}
 schedules=[]
-template=""
 
 def parsedate(datestr):
     """take the GTFS date format and return a date object"""
@@ -56,6 +48,21 @@ def opencsv(fileobject):
 def formatTime(timestr):
     parts=timestr.split(':')
     return str(int(parts[0]))+":"+parts[1]
+
+def handleException(ex,fileNotFound=None,base=None,shouldExit=True):
+    """generic file exception handler"""
+    if fileNotFound is None:
+        fileNotFound="File "+ex.filename+" does not exist. This is an invalid feed, because this is a required file."
+    if base is None:
+        base="There was a problem opening "+ex.filename+". This is file required to process the feed."
+    if isinstance(ex,FileNotFoundError):
+        print(fileNotFound)
+        if shouldExit:
+            exit(65)
+    elif isinstance(ex,BaseException):
+        print(base)
+        if shouldExit:
+            exit(66)
 
 class Route:
     def __init__(self, csvreader):
@@ -172,219 +179,242 @@ class Stop:
             "name":stops[self.stopid],
             "time":self.time})
 
-# get agency name(s)
-try:
-    with open("agency.txt",encoding="utf-8") as agencyfile:
-        agencytxt=opencsv(agencyfile)
-        for agencyrow in agencytxt:
-            if outputName is None:
-                outputName=agencyrow["agency_id"]
-            if outputName is None:
-                outputName=agencyrow["agency_name"]
-            if agency is None:
-                agency=agencyrow["agency_name"]
-            if agency is None:
-                agency=agencyrow["agency_id"]
-except FileNotFoundError as ex:
-    print("File "+ex.filename+" does not exist. This is an invalid feed, because this is a required file.")
-    exit(65)
-except BaseException as ex:
-    print("There was a problem opening "+ex.filename+". This is file required to process the feed.")
-    exit(66)
-# select which routes to process
-try:
-    with open("routes.txt",encoding="utf-8") as routesfile:
-        routestxt=opencsv(routesfile)
-        for routerow in routestxt:
-            if selectRoutes is None or len(selectRoutes) is 0 or routerow[routeIdColumn] in selectRoutes:
-                newroute=Route(routerow)
-                routes[newroute.id]=newroute
-                routesByName[newroute.referredTo]=newroute
-except FileNotFoundError as ex:
-    print("File "+ex.filename+" does not exist. This is an invalid feed, because this is a required file.")
-    exit(65)
-except BaseException as ex:
-    print("There was a problem opening "+ex.filename+". This is file required to process the feed.")
-    exit(66)
-print("Routes read")
+def readAgencyName(outputName=None,agency=None):
+    """read agency.txt from in the GTFS directory. Prefer agency ID for output name, agency name for agency."""
+    try:
+        with open("agency.txt",encoding="utf-8") as agencyfile:
+            agencytxt=opencsv(agencyfile)
+            for agencyrow in agencytxt:
+                if outputName is None:
+                    outputName=agencyrow["agency_id"]
+                if outputName is None:
+                    outputName=agencyrow["agency_name"]
+                if agency is None:
+                    agency=agencyrow["agency_name"]
+                if agency is None:
+                    agency=agencyrow["agency_id"]
+    except (FileNotFoundError,BaseException) as ex:
+        handleException(ex)
+    return outputName, agency
 
-# assign trips to schedules ("trip" being a list of stops)
-try:
-    with open("trips.txt",encoding="utf-8") as tripsfile:
-        tripstxt=opencsv(tripsfile)
-        for triprow in tripstxt:
-            if triprow["route_id"] in routes:
-                trips[triprow["trip_id"]]=Trip(triprow)
-except FileNotFoundError as ex:
-    print("File "+ex.filename+" does not exist. This is an invalid feed, because this is a required file.")
-    exit(65)
-except BaseException as ex:
-    print("There was a problem opening "+ex.filename+". This is file required to process the feed.")
-    exit(66)
-print("Trips read")
+def readRoutes(selectRoutes):
+    """read routes.txt from GTFS directory to select which routes to process.
 
-# assign stops to trips of selected routes
-print("Reading stops (please stand by)")
-try:
-    with open("stop_times.txt",encoding="utf-8") as stoptimesfile:
-        stoptimestxt=opencsv(stoptimesfile)
-        for stoprow in stoptimestxt:
-            if stoprow["trip_id"] in trips and "1"!=stoprow["pickup_type"] and "1"!=stoprow["drop_off_type"]:
-                trip=trips[stoprow["trip_id"]]
-                stop=Stop(stoprow)
-                trip.addStop(stop)
-                stops[stoprow["stop_id"]]=None
-except FileNotFoundError as ex:
-    print("File "+ex.filename+" does not exist. This is an invalid feed, because this is a required file.")
-    exit(65)
-except BaseException as ex:
-    print("There was a problem opening "+ex.filename+". This is file required to process the feed.")
-    exit(66)
-print("Stops read")
+    arguments:
+    selectRoutes -- optional, list of route IDs to return, otherwise return all
+    """
+    routes={}
+    routesByName={}
+    try:
+        with open("routes.txt",encoding="utf-8") as routesfile:
+            routestxt=opencsv(routesfile)
+            for routerow in routestxt:
+                if selectRoutes is None or len(selectRoutes) is 0 or routerow[routeIdColumn] in selectRoutes:
+                    newroute=Route(routerow)
+                    routes[newroute.id]=newroute
+                    routesByName[newroute.referredTo]=newroute
+    except (FileNotFoundError,BaseException) as ex:
+        handleException(ex)
+    return routesByName, routes
 
-# name stops
-try:
-    with open("stops.txt",encoding="utf-8") as stopsfile:
-        stopstxt=opencsv(stopsfile)
-        for stoprow in stopstxt:
-            if stoprow["stop_id"] in stops:
-                stopname=stoprow["stop_name"]
-                if stopname.lower().endswith(" station"):
-                    stopname=stopname[:-8]
-                stops[stoprow["stop_id"]]=stopname
-except FileNotFoundError as ex:
-    print("File "+ex.filename+" does not exist. This is an invalid feed, because this is a required file.")
-    exit(65)
-except BaseException as ex:
-    print("There was a problem opening "+ex.filename+". This is file required to process the feed.")
-    exit(66)
-print("Stops identified")
+def readTrips(routes):
+    """read trips.txt from GTFS directory, and assign trips to schedules ("trip" being a list of stops)
 
-# daily regularly scheduled service
-try:
-    with open("calendar.txt",encoding="utf-8") as calendar:
-        caltxt=opencsv(calendar)
-        for calrow in caltxt:
-            testdate=parsedate(calrow["start_date"])
-            enddate=parsedate(calrow["end_date"])
-			# sometimes there are schedules that should really be exceptions (since they are only valid for one day), and should not be confused with regular service
-            if "1"==calrow["sunday"] and calrow["start_date"]!=calrow["end_date"]:
-                dates[0].append(calrow["service_id"])
-            if "1"==calrow["monday"] and calrow["start_date"]!=calrow["end_date"]:
-                dates[1].append(calrow["service_id"])
-            if "1"==calrow["tuesday"] and calrow["start_date"]!=calrow["end_date"]:
-                dates[2].append(calrow["service_id"])
-            if "1"==calrow["wednesday"] and calrow["start_date"]!=calrow["end_date"]:
-                dates[3].append(calrow["service_id"])
-            if "1"==calrow["thursday"] and calrow["start_date"]!=calrow["end_date"]:
-                dates[4].append(calrow["service_id"])
-            if "1"==calrow["friday"] and calrow["start_date"]!=calrow["end_date"]:
-                dates[5].append(calrow["service_id"])
-            if "1"==calrow["saturday"] and calrow["start_date"]!=calrow["end_date"]:
-                dates[6].append(calrow["service_id"])
-            while testdate != enddate:
-                datestr=formatdate(testdate)
-                if datestr not in dates:
-                    dates[datestr]=[]
-                dayofweek=testdate.weekday()
-                if (0==dayofweek and "1"==calrow["monday"]) or \
-                    (1==dayofweek and "1"==calrow["tuesday"]) or \
-                    (2==dayofweek and "1"==calrow["wednesday"]) or \
-                    (3==dayofweek and "1"==calrow["thursday"]) or \
-                    (4==dayofweek and "1"==calrow["friday"]) or \
-                    (5==dayofweek and "1"==calrow["saturday"]) or \
-                    (6==dayofweek and "1"==calrow["sunday"]):
+    arguments:
+    routes -- required, list of routes to retrieve trips for
+    """
+    trips={}
+    try:
+        with open("trips.txt",encoding="utf-8") as tripsfile:
+            tripstxt=opencsv(tripsfile)
+            for triprow in tripstxt:
+                if triprow["route_id"] in routes:
+                    trips[triprow["trip_id"]]=Trip(triprow)
+    except (FileNotFoundError,BaseException) as ex:
+        handleException(ex)
+    return trips
+
+def readStops(trips):
+    """read stop_times.txt from GTFS directory, and assign stops to trips of selected routes and name stops
+
+    arguments:
+    trips -- required, list of trips to get stops for
+    """
+    stops={}
+    try:
+        with open("stop_times.txt",encoding="utf-8") as stoptimesfile:
+            stoptimestxt=opencsv(stoptimesfile)
+            for stoprow in stoptimestxt:
+                if stoprow["trip_id"] in trips and "1"!=stoprow["pickup_type"] and "1"!=stoprow["drop_off_type"]:
+                    trip=trips[stoprow["trip_id"]]
+                    stop=Stop(stoprow)
+                    trip.addStop(stop)
+                    stops[stoprow["stop_id"]]=None
+    except (FileNotFoundError,BaseException) as ex:
+        handleException(ex)
+    try:
+        with open("stops.txt",encoding="utf-8") as stopsfile:
+            stopstxt=opencsv(stopsfile)
+            for stoprow in stopstxt:
+                if stoprow["stop_id"] in stops:
+                    stopname=stoprow["stop_name"]
+                    if stopname.lower().endswith(" station"):
+                        stopname=stopname[:-8]
+                    stops[stoprow["stop_id"]]=stopname
+    except (FileNotFoundError,BaseException) as ex:
+        handleException(ex)
+    return stops
+
+def readSchedules():
+    """read calendar.txt (daily regularly scheduled service) and calendar_dates.txt (if available) from GTFS directory."""
+    day=datetime.timedelta(days=1)
+    dates={0:[],1:[],2:[],3:[],4:[],5:[],6:[]}
+    try:
+        with open("calendar.txt",encoding="utf-8") as calendar:
+            caltxt=opencsv(calendar)
+            for calrow in caltxt:
+                testdate=parsedate(calrow["start_date"])
+                enddate=parsedate(calrow["end_date"])
+                # sometimes there are schedules that should really be exceptions
+                # (since they are only valid for one day),
+                # and should not be confused with regular service
+                if "1"==calrow["sunday"] and calrow["start_date"]!=calrow["end_date"]:
+                    dates[0].append(calrow["service_id"])
+                if "1"==calrow["monday"] and calrow["start_date"]!=calrow["end_date"]:
+                    dates[1].append(calrow["service_id"])
+                if "1"==calrow["tuesday"] and calrow["start_date"]!=calrow["end_date"]:
+                    dates[2].append(calrow["service_id"])
+                if "1"==calrow["wednesday"] and calrow["start_date"]!=calrow["end_date"]:
+                    dates[3].append(calrow["service_id"])
+                if "1"==calrow["thursday"] and calrow["start_date"]!=calrow["end_date"]:
+                    dates[4].append(calrow["service_id"])
+                if "1"==calrow["friday"] and calrow["start_date"]!=calrow["end_date"]:
+                    dates[5].append(calrow["service_id"])
+                if "1"==calrow["saturday"] and calrow["start_date"]!=calrow["end_date"]:
+                    dates[6].append(calrow["service_id"])
+                while testdate != enddate:
+                    datestr=formatdate(testdate)
+                    if datestr not in dates:
+                        dates[datestr]=[]
+                    dayofweek=testdate.weekday()
+                    if (0==dayofweek and "1"==calrow["monday"]) or \
+                        (1==dayofweek and "1"==calrow["tuesday"]) or \
+                        (2==dayofweek and "1"==calrow["wednesday"]) or \
+                        (3==dayofweek and "1"==calrow["thursday"]) or \
+                        (4==dayofweek and "1"==calrow["friday"]) or \
+                        (5==dayofweek and "1"==calrow["saturday"]) or \
+                        (6==dayofweek and "1"==calrow["sunday"]):
+                        dates[datestr].append(calrow["service_id"])
+                    testdate+=day
+    except (FileNotFoundError,BaseException) as ex:
+        handleException(ex)
+    # exceptions to regularly scheduled service
+    try:
+        with open("calendar_dates.txt",encoding="utf-8") as calendar:
+            caltxt=opencsv(calendar)
+            for calrow in caltxt:
+                dateexc=parsedate(calrow["date"])
+                datestr=formatdate(dateexc)
+                if "1"==calrow["exception_type"]:
                     dates[datestr].append(calrow["service_id"])
-                testdate+=day
-except FileNotFoundError as ex:
-    print("File "+ex.filename+" does not exist. This is an invalid feed, because this is a required file.")
-    exit(65)
-except BaseException as ex:
-    print("There was a problem opening "+ex.filename+". This is file required to process the feed.")
-    exit(66)
-# exceptions to regularly scheduled service
-try:
-    with open("calendar_dates.txt",encoding="utf-8") as calendar:
-        caltxt=opencsv(calendar)
-        for calrow in caltxt:
-            dateexc=parsedate(calrow["date"])
-            datestr=formatdate(dateexc)
-            if "1"==calrow["exception_type"]:
-                dates[datestr].append(calrow["service_id"])
-            elif "2"==calrow["exception_type"]:
-                dates[datestr].remove(calrow["service_id"])
-except FileNotFoundError as ex:
-    print("File "+ex.filename+" does not exist. Exceptions to regularly scheduled service will not be considered.")
-except BaseException as ex:
-    print("There was a problem opening "+ex.filename+". Exceptions to regularly scheduled service will not be considered.")
-# gather trips into route schedules
-for trip in trips.values():
-    route=routes[trip.route]
-    if trip.service not in route.schedules:
-        route.schedules[trip.service]={}
-    if trip.service not in schedules:
-        schedules.append(trip.service)
-    trip.finalize()
-    if trip.direction not in route.schedules[trip.service]:
-        route.schedules[trip.service][trip.direction]=[]
-    route.schedules[trip.service][trip.direction].append(trip)
-# delete unneccessary schedules
-for dayschedules in dates.values():
-    for schedule in dayschedules[:]:
-        if schedule not in schedules:
-            dayschedules.remove(schedule)
-# sort trips within route schedules
-for route in routes.values():
-    for schedule in route.schedules.values():
-        for destination in schedule.values():
-            destination.sort()
-    route.finalize()
-print("Schedules assigned")
+                elif "2"==calrow["exception_type"]:
+                    dates[datestr].remove(calrow["service_id"])
+    except (FileNotFoundError,BaseException) as ex:
+        handleException(ex,
+            "File "+ex.filename+" does not exist. Exceptions to regularly scheduled service will not be considered.",
+            "There was a problem opening "+ex.filename+". Exceptions to regularly scheduled service will not be considered.",
+            False)
+    # gather trips into route schedules
+    for trip in trips.values():
+        route=routes[trip.route]
+        if trip.service not in route.schedules:
+            route.schedules[trip.service]={}
+        if trip.service not in schedules:
+            schedules.append(trip.service)
+        trip.finalize()
+        if trip.direction not in route.schedules[trip.service]:
+            route.schedules[trip.service][trip.direction]=[]
+        route.schedules[trip.service][trip.direction].append(trip)
+    # delete unneccessary schedules
+    for dayschedules in dates.values():
+        for schedule in dayschedules[:]:
+            if schedule not in schedules:
+                dayschedules.remove(schedule)
+    # sort trips within route schedules
+    for route in routes.values():
+        for schedule in route.schedules.values():
+            for destination in schedule.values():
+                destination.sort()
+        route.finalize()
+    return dates
 
-outputVars={"title":agency,"headerTitle":agency,"generationDate":email.utils.formatdate(localtime=True)}
-routeSelect=""
-tableTemplate="\t<section id='{0}'>\n\t\t<h1>{1}</h1>\n{2}\t</section>\n"
-activeTemplate="\t\t<table><caption>{0}</caption><thead></thead><tbody></tbody></table>\n"
-tables=""
-css="<style>"
-for routename in selectRoutes if len(selectRoutes)>0 else routesByName.keys():
-    route=routesByName[routename]
-    routeSelect+="\t<input type='radio' name='line' value='{1}' id='radio-{1}'/><label for='radio-{1}'>{0}</label>\n".format(route.shortname,route.id)
-    routetables=""
-    for line in sorted(route.stops.keys()):
-        routetables+=activeTemplate.format(line)
-    tables+=tableTemplate.format(route.id,route.longname,routetables)
-outputVars["html"]=routeSelect+tables
-outputVars["javascript"]="const dates={0};\nconst routes={1};\nconst _12hourClock={2};\n".format(dates.__str__(),routes.__str__().replace("'\\x00'","null"),str(_12hourClock).lower())
+def formatOutputVars(agency,selectRoutes,routes,routesByName,dates,_12hourClock):
+    """return output variable object for insertion into template."""
+    outputVars={"title":agency,"headerTitle":agency,"generationDate":email.utils.formatdate(localtime=True)}
+    routeSelect=""
+    tableTemplate="\t<section id='{0}'>\n\t\t<h1>{1}</h1>\n{2}\t</section>\n"
+    activeTemplate="\t\t<table><caption>{0}</caption><thead></thead><tbody></tbody></table>\n"
+    tables=""
+    for routename in selectRoutes if len(selectRoutes)>0 else routesByName.keys():
+        route=routesByName[routename]
+        routeSelect+="\t<input type='radio' name='line' value='{1}' id='radio-{1}'/><label for='radio-{1}'>{0}</label>\n".format(route.shortname,route.id)
+        routetables=""
+        for line in sorted(route.stops.keys()):
+            routetables+=activeTemplate.format(line)
+        tables+=tableTemplate.format(route.id,route.longname,routetables)
+    outputVars["html"]=routeSelect+tables
+    outputVars["javascript"]="const dates={0};\nconst routes={1};\nconst _12hourClock={2};\n".format(dates.__str__(),routes.__str__().replace("'\\x00'","null"),str(_12hourClock).lower())
+    return outputVars
 
-# read CSS to combine into HTML
-try:
-    with open("t-time.css","r",encoding="utf-8") as cssfile:
-        for line in cssfile:
-            css+=line
-    css+="</style>"
-except BaseException as ex:
-    css=None
-# read template
-try:
-    with open("t-time.html","r",encoding="utf-8") as templatefile:
-        for line in templatefile:
-            template+=line
-except FileNotFoundError as ex:
-    print("File "+ex.filename+" does not exist. This is the HTML template to export the data.")
-    exit(65)
-except BaseException as ex:
-    print("There was a problem opening "+ex.filename+". This is the HTML template to export the data.")
-    exit(66)
-if css != None:
-    template=template.replace('<link rel="stylesheet" href="t-time.css" />',css,1)
-templateObj=Template(template)
-# write HTML
-outputName=outputName+".html"
-try:
-    with open(outputName,"w",encoding="utf-8") as output:
-        output.write(templateObj.substitute(outputVars))
-except BaseException as ex:
-    print("There was a problem writing "+ex.filename+". This was to be the output file, but it cannot be created or written, or something.")
-    exit(73)
-input("Wrote {0} as final output. Have fun!".format(outputName))
+def readCss(cssFilename="t-time.css"):
+    """read entire CSS file, or return None."""
+    css="<style>"
+    try:
+        with open(cssFilename,"r",encoding="utf-8") as cssfile:
+            for line in cssfile:
+                css+=line
+        css+="</style>"
+    except BaseException as ex:
+        css=None
+    return css
+
+def readHtmlTemplate(templateFilename="t-time.html",css=None):
+    """read entire HTML template, insert CSS (optionally), and return it in a Template object."""
+    template=""
+    try:
+        with open(templateFilename,"r",encoding="utf-8") as templatefile:
+            for line in templatefile:
+                template+=line
+    except (FileNotFoundError,BaseException) as ex:
+        handleException(ex,
+            "File "+ex.filename+" does not exist. This is the HTML template to export the data.",
+            "There was a problem opening "+ex.filename+". This is the HTML template to export the data.")
+    if css != None:
+        template=template.replace('<link rel="stylesheet" href="t-time.css" />',css,1)
+    return Template(template)
+
+def writeHtml(template,outputVars,outputName):
+    """use output variables on template, and write HTML file."""
+    outputName=outputName+".html"
+    try:
+        with open(outputName,"w",encoding="utf-8") as output:
+            output.write(template.substitute(outputVars))
+    except BaseException as ex:
+        print("There was a problem writing "+ex.filename+". This was to be the output file, but it cannot be created or written, or something.")
+        exit(73)
+
+if __name__=="__main__":
+    outputName,agency=readAgencyName(outputName,agency)
+    routesByName,routes=readRoutes(selectRoutes)
+    print("Routes read")
+    trips=readTrips(routes)
+    print("Trips read")
+    print("Reading stops (please stand by)")
+    stops=readStops(trips)
+    print("Stops read")
+    dates=readSchedules()
+    print("Schedules assigned")
+    outputVars=formatOutputVars(agency,selectRoutes,routes,routesByName,dates,_12hourClock)
+    template=readHtmlTemplate(css=readCss())
+    writeHtml(template,outputVars,outputName)
+    print("Wrote {0} as final output. Have a nice trip!".format(outputName))
