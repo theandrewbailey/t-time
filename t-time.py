@@ -20,6 +20,7 @@ openFileInZip
 formatTime
 removeSpaces
 handleException
+orderDistinctValues
 
 variable exports:
 _removeSpacesRegex
@@ -29,6 +30,7 @@ _routeIdColumn
 import csv,json,time,datetime,email.utils,re,zipfile,io,json,html.parser
 from string import Template
 from os import stat
+from collections import OrderedDict
 from sys import exit,argv
 
 # routes will be referred to by this column from routes.txt
@@ -60,6 +62,13 @@ def formatTime(timestr):
     """remove leading zeros on hours"""
     parts=timestr.split(':')
     return str(int(parts[0]))+":"+parts[1]
+def orderDistinctValues(dic):
+    """return values of a dictionary (in iteration order), without duplicates"""
+    output=[]
+    for key,value in dic.items():
+        if value not in output:
+            output.append(value)
+    return tuple(output)
 def removeSpaces(victim):
     """remove spaces between brackets and commas, for smaller filesize"""
     return _removeSpacesRegex.sub(r"\1\2",victim)
@@ -103,6 +112,13 @@ class Route:
                             # maybe put these in some sort of order?
                             self.stops[trip.direction].append([stops[stop.stopid],stop.stopid])
                             self.accountedFor[trip.direction].append(stops[stop.stopid])
+    def getAllStops(self):
+        """figure out all stops, regardless of schedule or direction"""
+        stops=OrderedDict()
+        for direction,stoplist in self.stops.items():
+            for stop in stoplist:
+                stops[stop[1]]=stop[0]
+        return stops
     def __lt__(self,other):
         return self.referredTo.__lt__(other.referredTo)
     def __gt__(self,other):
