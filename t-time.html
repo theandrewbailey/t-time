@@ -9,6 +9,7 @@
 	<meta name="description" content="time tables generated from a GTFS formatted feed"/>
 	<meta http-equiv="Date" content="${generationDate}"/>
 	<meta http-equiv="Last-Modified" content="${generationDate}"/>
+	<script type="application/x-t-time-settings">${ttimesettings}</script>
 	<link rel="stylesheet" href="t-time.css" />
 </head><body>
 <main>
@@ -126,7 +127,7 @@ function updateActiveSchedules(event){
 				});
 			};
 		}else{
-			// there are no schedules for today; hide the table
+			// there are no (more) schedules for today; hide the table
 			if(0==tbody.childNodes.length){
 				table.classList.add("hide");
 			}
@@ -224,15 +225,21 @@ function createTable(caption,classNames){
 }
 function setStopTimesForDay(theDay){
 	"use strict";
+	// WARNING: O(n^5) LOOP!
 	forEach.call(Object.keys(routes),function(route){
 		forEach.call(Object.keys(routes[route]["schedules"]),function(schedulename){
 			forEach.call(Object.keys(routes[route]["schedules"][schedulename]),function(direction){
 				forEach.call(routes[route]["schedules"][schedulename][direction],function(trip){
 					forEach.call(trip,function(stopobj){
 						if("string"==typeof(stopobj)){
-							// initialize stop object
 							const idx=trip.indexOf(stopobj);
-							trip[idx]=new Stop(stopobj,cloneDateWithTimeString(theDay,stopobj),routes[route]["stops"][direction][idx][0]);
+							if(idx>=routes[route]["stops"][direction].length){
+								// I'm not sure if this is always the right thing to do, but it avoids array index out of bound exceptions
+								trip.splice(idx,1);
+							}else{
+								// initialize stop object
+								trip[idx]=new Stop(stopobj,cloneDateWithTimeString(theDay,stopobj),routes[route]["stops"][direction][idx][0]);
+							}
 						}else if(null!=stopobj){
 							stopobj.datetime=cloneDateWithTimeString(theDay,stopobj["time"]);
 						}
