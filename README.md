@@ -24,26 +24,14 @@ Every time I used [the T](https://en.wikipedia.org/wiki/Pittsburgh_Light_Rail), 
 ## Usage
 
 1. download a feed
-   - browse [TransitFeeds](https://transitfeeds.com/)
-   - consult your local mass transit organization's developer resources
-2. unzip it somewhere
-3. run `t-time.py` in somewhere
-   - optionally, configure variables in `t-time.py`:
-     - `selectRoutes`
-       - (tuple/list) only these routes will be included in the output, in that order
-      - `excludeStops`
-        - (dict keyed by route) these stops will never show in the output
-      - `activeStops` (totally bugged and incomplete)
-        - (dict keyed by route) only these stops will have times counted down; all stops will show in static schedules
-      - `_12hourClock`
-        - (True/False) show times between 1-12
-      - `outputName`
-        - title of HTML output
-      - `agency`
-        - name of HTML output
-4. copy the output HTML file where ever you'd like
+    - browse [TransitFeeds](https://transitfeeds.com/)
+    - consult your local mass transit organization's developer resources
+2. run `t-time-gui.pyw` in somewhere, and follow the prompts
+3. copy the output HTML file where ever you'd like
     - it is self contained: all JS and CSS is contained within
+4. if the output file exists when ran again, selections will be read from it, so (maybe) you won't need to reselect everything.
+    - running `t-time.py` with the GTFS zip file as an argument will look for the default output file, and will automatically update it with the info from the new feed, as if you selected all the defaults in the GUI.
 
 ## Specifics
 
-This was developed against python 3.5 and the [Port Authority of Allegheny County's GTFS feed](http://www.portauthority.org/GeneralTransitFeed/). [PAAC.html](https://theandrewbailey.github.io/t-time/PAAC.html) is it's output.
+This was developed against Python 3.5 and the [Port Authority of Allegheny County's GTFS feed](http://www.portauthority.org/GeneralTransitFeed/). [PAAC.html](https://theandrewbailey.github.io/t-time/PAAC.html) is it's output.

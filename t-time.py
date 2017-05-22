@@ -245,7 +245,7 @@ class GtfsProcessor:
     """container to hold methods and variables necessary to process GTFS feeds"""
     def __init__(self,outputName=None,agencyName=None,inputZip=None,_12hourClock=True):
         """initialize some variables. can specify a zip file that contains the feed, otherwise will read files from cwd. can set a few things here."""
-        self.outputName=outputName # will have .html attached later
+        self.outputName=outputName
         self.agencyName=agencyName # <title> in html output
         self.inputZip=inputZip
         self._12hourClock=_12hourClock # TODO: Automatically determine this based on current locale (python makes this unclear)
@@ -264,7 +264,7 @@ class GtfsProcessor:
                     agencyName=agencyrow["agency_name"]
                 if agencyName is None:
                     agencyName=agencyrow["agency_id"]
-            return outputName, agencyName
+            return outputName+".html",agencyName
         try:
             if self.inputZip is None:
                 with open("agency.txt",encoding="utf-8") as agencyfile:
@@ -277,16 +277,15 @@ class GtfsProcessor:
         """try to read output of the last run of this feed, and load some settings if possible.
 
         arguments:
-        lastOutput -- optional, if last output filename is different than agencyName.html
+        lastOutput -- optional, if last output filename is different than agencyName
         """
         if lastOutput is None:
-            lastOutput=self.outputName+".html"
+            lastOutput=self.outputName
         try:
             with open(lastOutput,'r') as old:
                 fetcher=SettingsFetcher()
                 fetcher.feed(old.read())
                 settings=json.loads(fetcher.settings)
-                #self.agencyName=fetcher.agencyName
                 self._12hourClock=settings["_12hourClock"]
                 self.selectedRoutes=settings["selectedRoutes"]
                 self.excludeStops=settings["excludeStops"]
@@ -509,14 +508,18 @@ class GtfsProcessor:
         self.template=Template(template)
     def writeHtml(self):
         """use output variables on template, and write HTML file. return output filename"""
-        outputName=self.outputName+".html"
         try:
-            with open(outputName,"w",encoding="utf-8") as output:
+            with open(self.outputName,"w",encoding="utf-8") as output:
                 output.write(self.template.substitute(self.outputVars))
         except BaseException as ex:
             print("There was a problem writing "+ex.filename+". This was to be the output file, but it cannot be created or written, or something.")
             exit(73)
-        return outputName
+        return self.outputName
+    def completeOutput(self):
+        self.readCss()
+        self.formatOutputVars()
+        self.readHtmlTemplate()
+        return self.writeHtml()
     def run(self):
         """automatically run things the way they were meant to be run with (hopefully reasonable) defaults."""
         self.readAgencyName()
@@ -533,10 +536,7 @@ class GtfsProcessor:
         self.readSchedules()
         self.buildDataModel()
         print("Schedules assigned")
-        self.readCss()
-        self.formatOutputVars()
-        self.readHtmlTemplate()
-        print("Wrote {0} as final output. Have a nice trip!".format(self.writeHtml()))
+        print("Wrote {0} as final output. Have a nice trip!".format(self.completeOutput()))
 
 if "__main__"==__name__:
     if len(argv)>1:
