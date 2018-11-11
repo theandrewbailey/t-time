@@ -27,7 +27,7 @@ _removeSpacesRegex
 _routeIdColumn
 """
 
-import csv,json,time,datetime,email.utils,re,zipfile,io,json,html.parser
+import csv,json,time,datetime,email.utils,re,zipfile,io,json,html.parser,codecs
 from string import Template
 from os import stat
 from collections import OrderedDict
@@ -57,7 +57,10 @@ def openCsv(fileobject):
 def openFileInZip(zipfile,filename):
     """take a zip file, and return an entire file within as a string"""
     with zipfile.open(filename) as file:
-        return file.read().decode("utf-8")
+        fileBytes=file.read()
+        if fileBytes.startswith(codecs.BOM_UTF8):
+            return fileBytes.decode("utf-8-sig")
+        return fileBytes.decode("utf-8")
 def formatTime(timestr):
     """remove leading zeros on hours"""
     parts=timestr.split(':')
