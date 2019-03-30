@@ -56,13 +56,17 @@ function updateActiveSchedules(event){
 	"use strict";
 	const radiobutton=document.querySelector("input[name='line']:checked");
 	if(null==radiobutton){return false;}
+	forEach.call(document.querySelectorAll("label.active"),function(label){
+		label.classList.remove("active");
+	});
+	document.querySelector("label[for='"+radiobutton.id+"']").classList.add("active");
 	const currentRouteTables=document.getElementById(radiobutton.value);
 	if(null==currentRouteTables){return false;}
-	const nowDate=new Date();
+	const nowDate=new Date(Date.now()-60000);
 	if(null==referenceDate||nowDate.getDate()!=referenceDate.getDate()){
 		// new day, so update times and unhide all tables
 		setStopTimesForDay(nowDate);
-		forEach.call(document.getElementsByTagName("table"),function(table){
+		forEach.call(currentRouteTables.querySelectorAll("table"),function(table){
 			table.classList.remove("hide");
 			table.classList.remove("predicted");
 		});
@@ -75,24 +79,27 @@ function updateActiveSchedules(event){
 	}
 	const route=routes[currentRouteTables.id];
 	const newMillis=referenceDate.getTime();
-	forEach.call(currentRouteTables.getElementsByTagName("table"),function(table){
+	forEach.call(currentRouteTables.querySelectorAll("table"),function(table){
+		currentRouteTables.removeChild(table);
+	});
+	forEach.call(Object.keys(route.stops),function(routeName){
+		const table=createTable(routeName,[]);
+		currentRouteTables.appendChild(table);
 		const name=table.caption.textContent;
 		if(predictedSchedule){
 			table.classList.add("predicted");
 		}
 		const thead=deleteAllChildren(table.tHead);
 		const tbody=deleteAllChildren(table.tBodies.item(0));
-		const stopinfo=route["stops"][name];
+		const stopnames=route["stops"][name];
 		const stoptimes={}
-		forEach.call(stopinfo,function(stopname){
+		forEach.call(stopnames,function(stopname){
 			const headelement=document.createElement("th");
-			headelement.textContent=stopname[0];
-			headelement.dataset["stopid"]=stopname[1];
+			headelement.textContent=stopname;
 			thead.appendChild(headelement);
-			stoptimes[stopname[0]]=[];
+			stoptimes[stopname]=[];
 		});
 		Object.freeze(stoptimes);
-		const stopnames=getStopNames(stopinfo);
 		let timesExist=false;
 		forEach.call(Object.keys(route["schedules"]),function(schedulename){
 			if(-1<scheds.indexOf(schedulename)&&name in route["schedules"][schedulename]){
@@ -155,14 +162,12 @@ function updateStaticSchedules(forDate){
 			if(-1<scheds.indexOf(schedulename)&&destination in route["schedules"][schedulename]){
 				const thead=table.createTHead();
 				const tbody=table.tBodies.item(0);
-				const stopinfo=route["stops"][destination];
-				forEach.call(stopinfo,function(stopname){
+				const stopnames=route["stops"][destination];
+				forEach.call(stopnames,function(stopname){
 					const headelement=document.createElement("th");
-					headelement.textContent=stopname[0];
-					headelement.dataset["stopid"]=stopname[1];
+					headelement.textContent=stopname;
 					thead.appendChild(headelement);
 				});
-				const stopnames=getStopNames(stopinfo);
 				forEach.call(route["schedules"][schedulename][destination],function(trip){
 					const times=new Array(stopnames.length);
 					times.fill("");
@@ -194,7 +199,7 @@ function resetSelector(dateObj){
 }
 function deleteAllChildren(element){
 	"use strict";
-	while(element.firstChild){
+	while(element&&element.firstChild){
 		element.removeChild(element.firstChild);
 	}
 	return element;
@@ -208,16 +213,11 @@ function cloneDateWithTimeString(dateobj,timestr){
 	const parts=timestr.split(":");
 	return new Date(dateobj.getFullYear(),dateobj.getMonth(),dateobj.getDate(),new Number(parts[0]),new Number(parts[1]));
 }
-function getStopNames(stopinfo){
-	"use strict";
-	return Object.freeze(stopinfo.map(function(val){
-		return val[0];
-	}));
-}
 function createTable(caption,classNames){
 	"use strict";
 	const table=document.createElement("table");
 	table.createCaption().textContent=caption;
+	table.createTHead();
 	forEach.call(classNames,function(classname){table.classList.add(classname);});
 	table.insertRow();
 	table.deleteRow(-1);
@@ -233,12 +233,12 @@ function setStopTimesForDay(theDay){
 					forEach.call(trip,function(stopobj){
 						if("string"==typeof(stopobj)){
 							const idx=trip.indexOf(stopobj);
-							if(idx>=routes[route]["stops"][direction].length){
+							if(routes[route]["stops"][direction]&&idx>=routes[route]["stops"][direction].length){
 								// I'm not sure if this is always the right thing to do, but it avoids array index out of bound exceptions
 								trip.splice(idx,1);
-							}else{
+							}else if(routes[route]["stops"][direction]){
 								// initialize stop object
-								trip[idx]=new Stop(stopobj,cloneDateWithTimeString(theDay,stopobj),routes[route]["stops"][direction][idx][0]);
+								trip[idx]=new Stop(stopobj,cloneDateWithTimeString(theDay,stopobj),routes[route]["stops"][direction][idx]);
 							}
 						}else if(null!=stopobj){
 							stopobj.datetime=cloneDateWithTimeString(theDay,stopobj["time"]);

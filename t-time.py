@@ -28,8 +28,9 @@ _routeIdColumn
 """
 
 import csv,json,time,datetime,email.utils,re,zipfile,io,json,html.parser,codecs
+from multiprocessing import Pool
 from string import Template
-from os import stat
+from os import stat,cpu_count
 from collections import OrderedDict
 from sys import exit,argv
 
@@ -49,18 +50,24 @@ def openCsv(fileobject):
     """take a file object, determine format, and return a CSV DictReader"""
     if type(fileobject) is str:
         dialect=csv.Sniffer().sniff(fileobject[:4090])
-        return csv.DictReader(io.StringIO(fileobject),dialect=dialect)
+        return csv.reader(io.StringIO(fileobject),dialect=dialect)
     else:
         dialect=csv.Sniffer().sniff(fileobject.read(4090))
         fileobject.seek(0)
-        return csv.DictReader(fileobject,dialect=dialect)
-def openFileInZip(zipfile,filename):
-    """take a zip file, and return an entire file within as a string"""
-    with zipfile.open(filename) as file:
-        fileBytes=file.read()
-        if fileBytes.startswith(codecs.BOM_UTF8):
-            return fileBytes.decode("utf-8-sig")
-        return fileBytes.decode("utf-8")
+        return csv.reader(fileobject,dialect=dialect)
+def getFile(name,inputZip,shouldExitOnError=True):
+    try:
+        if inputZip is None:
+            with open(name,encoding="utf-8") as fileObject:
+                return fileObject.read()
+        else:
+            with inputZip.open(name) as file:
+                fileBytes=file.read()
+                if fileBytes.startswith(codecs.BOM_UTF8):
+                    return fileBytes.decode("utf-8-sig")
+                return fileBytes.decode("utf-8")
+    except (FileNotFoundError,BaseException) as ex:
+        handleException(ex,shouldExit=shouldExitOnError)
 def formatTime(timestr):
     """remove leading zeros on hours"""
     parts=timestr.split(':')
@@ -77,50 +84,58 @@ def removeSpaces(victim):
     return _removeSpacesRegex.sub(r"\1\2",victim)
 def handleException(ex,fileNotFound=None,base=None,shouldExit=True):
     """generic file exception handler"""
-    #print(ex)
     if isinstance(ex,FileNotFoundError):
-        print("File "+ex.filename+" does not exist. This is an invalid feed, because this is a required file." if fileNotFound is None else fileNotFound)
+        print("File {0} does not exist. This is an invalid feed, because this is a required file.".format(ex.filename) if fileNotFound is None else fileNotFound)
         if shouldExit:
             exit(65)
     elif isinstance(ex,BaseException):
-        print("There was a problem opening "+ex.filename+". This is file required to process the feed." if base is None else base)
+        print("There was a problem opening {0}. This is file required to process the feed.".format(ex.filename) if base is None else base)
         if shouldExit:
             exit(66)
-
+    return None
 class Route:
     """container for trips and schedules, and associated stop points"""
-    def __init__(self, csvreader):
-        """read columns off a single row of routes.txt"""
-        self.id=csvreader["route_id"]
-        self.agency=csvreader["agency_id"] if "agency_id" in csvreader else agencyName
-        self.shortname=csvreader["route_short_name"]
-        self.longname=csvreader["route_long_name"]
-        self.referredTo=csvreader[_routeIdColumn]
+    def __init__(self, routeId, routeAgency, routeShortname, routeLongname, routeReferredTo):
+        self.id=routeId
+        self.agency=routeAgency
+        self.shortname=routeShortname
+        self.longname=routeLongname
+        self.referredTo=routeReferredTo
         self.reset()
     def reset(self):
         """drop current data (undo self.finalize)"""
         self.schedules={}
         self.stops={}
-        self.accountedFor={}
-    def finalize(self,stops):
+    def finalize(self,excludeStops):
         """organize all child trips and stops"""
+        stops=self.getAllStops()
         for sched in self.schedules.values():
             for destination in sched.values():
                 for trip in destination:
-                    if trip.direction not in self.stops:
-                        self.stops[trip.direction]=[]
-                        self.accountedFor[trip.direction]=[]
+                    trip.finalize(excludeStops,self.referredTo)
+        for sched in self.schedules.values():
+            for destination in sched.values():
+                for trip in destination:
                     for stop in trip.stops:
-                        if stops[stop.stopid] not in self.accountedFor[trip.direction]:
-                            # maybe put these in some sort of order?
-                            self.stops[trip.direction].append([stops[stop.stopid],stop.stopid])
-                            self.accountedFor[trip.direction].append(stops[stop.stopid])
+                        if stop.name is not None:
+                            if trip.direction not in self.stops:
+                                self.stops[trip.direction]=[]
+                            if stop.name not in self.stops[trip.direction]:
+                                self.stops[trip.direction].append(stop.name)
+    def getAllTrips(self):
+        """get all trips, regardless of schedule or direction"""
+        trips={}
+        for schedule in self.schedules:
+            for direction in self.schedules[schedule]:
+                for trip in self.schedules[schedule][direction]:
+                    trips[trip.trip]=trip
+        return trips
     def getAllStops(self):
         """figure out all stops, regardless of schedule or direction"""
         stops=OrderedDict()
-        for direction,stoplist in self.stops.items():
-            for stop in stoplist:
-                stops[stop[1]]=stop[0]
+        for trip in self.getAllTrips().values():
+            for stop in trip.stops:
+                stops[stop.stopid]=stop
         return stops
     def __lt__(self,other):
         return self.referredTo.__lt__(other.referredTo)
@@ -144,12 +159,11 @@ class Route:
              "schedules":self.schedules}))
 class Trip:
     """a glorified list of stops"""
-    def __init__(self, csvreader):
-        """reads columns off a single row of trips.txt"""
-        self.route=csvreader["route_id"]
-        self.service=csvreader["service_id"]
-        self.trip=csvreader["trip_id"]
-        self.direction=csvreader["trip_headsign"]
+    def __init__(self, routeId, serviceId, tripId, tripDirection):
+        self.route=routeId
+        self.service=serviceId
+        self.trip=tripId
+        self.direction=tripDirection
         self.time=None
         self.stops=[]
     def addStop(self, stop):
@@ -195,11 +209,11 @@ class Trip:
         return str(orderedstops)
 class Stop:
     """represents when a vehicle may pickup or dropoff passengers. a single specific instance will never exist in multiple schedules, routes, or trips."""
-    def __init__(self, csvreader):
-        """reads columns off a single row of stop_times.txt"""
-        self.time=csvreader["arrival_time"]
-        self.sequence=int(csvreader["stop_sequence"])
-        self.stopid=csvreader["stop_id"]
+    def __init__(self, arrivalTime, sequence, stopId, name=None):
+        self.time=arrivalTime
+        self.sequence=int(sequence)
+        self.stopid=stopId
+        self.name=name
     def __lt__(self,other):
         return self.sequence<other.sequence
     def __gt__(self,other):
@@ -216,7 +230,7 @@ class Stop:
         return self.__str__()
     def __str__(self):
         return str({
-            "name":stops[self.stopid],
+            "name":self.name,
             "time":self.time})
 class SettingsFetcher(html.parser.HTMLParser):
     """subclasses html.parser.HTMLParser to look for settings in old output file"""
@@ -246,36 +260,29 @@ class SettingsFetcher(html.parser.HTMLParser):
         self.foundTag=False
 class GtfsProcessor:
     """container to hold methods and variables necessary to process GTFS feeds"""
-    def __init__(self,outputName=None,agencyName=None,inputZip=None,_12hourClock=True):
+    def __init__(self,outputName=None,agencyName=None,_12hourClock=True):
         """initialize some variables. can specify a zip file that contains the feed, otherwise will read files from cwd. can set a few things here."""
         self.outputName=outputName
         self.agencyName=agencyName # <title> in html output
-        self.inputZip=inputZip
         self._12hourClock=_12hourClock # TODO: Automatically determine this based on current locale (python makes this unclear)
         self.selectedRoutes=() # tuple of route IDs
         self.excludeStops={} # dictionary of route IDs to lists of stop IDs
-    def readAgencyName(self):
+        self.schedules=[]
+        self.routes={}
+    def readAgencyName(self,inputZip):
         """read agency.txt from in the GTFS directory. Prefer agency ID for output name, agency name for agency."""
-        def process(agencyfile,outputName,agencyName):
-            agencytxt=openCsv(agencyfile)
-            for agencyrow in agencytxt:
-                if outputName is None:
-                    outputName=agencyrow["agency_id"]
-                if outputName is None:
-                    outputName=agencyrow["agency_name"]
-                if agencyName is None:
-                    agencyName=agencyrow["agency_name"]
-                if agencyName is None:
-                    agencyName=agencyrow["agency_id"]
-            return outputName+".html",agencyName
-        try:
-            if self.inputZip is None:
-                with open("agency.txt",encoding="utf-8") as agencyfile:
-                    self.outputName,self.agencyName=process(agencyfile,self.outputName,self.agencyName)
-            else:
-                self.outputName,self.agencyName=process(openFileInZip(self.inputZip,"agency.txt"),self.outputName,self.agencyName)
-        except (FileNotFoundError,BaseException) as ex:
-            handleException(ex)
+        agencytxt=openCsv(getFile("agency.txt",inputZip))
+        headers=next(agencytxt)
+        for agencyrow in agencytxt:
+            if self.outputName is None:
+                self.outputName=agencyrow[headers.index("agency_id")]
+            if self.outputName is None:
+                self.outputName=agencyrow[headers.index("agency_name")]
+            if self.agencyName is None:
+                self.agencyName=agencyrow[headers.index("agency_name")]
+            if self.agencyName is None:
+                self.agencyName=agencyrow[headers.index("agency_id")]
+        self.outputName+=".html"
     def readSettings(self,lastOutput=None):
         """try to read output of the last run of this feed, and load some settings if possible.
 
@@ -294,186 +301,173 @@ class GtfsProcessor:
                 self.excludeStops=settings["excludeStops"]
         except:return None
         return lastOutput
-    def readRoutes(self):
+    def readRoutes(self,inputZip):
         """read routes.txt from GTFS directory to select which routes to process."""
-        def process(routesfile,selectedRoutes):
-            routes={}
-            routesByName={}
-            routestxt=openCsv(routesfile)
-            for routerow in routestxt:
-                if selectedRoutes is None or 0==len(selectedRoutes) or routerow[_routeIdColumn] in selectedRoutes:
-                    newroute=Route(routerow)
-                    routes[newroute.id]=newroute
-                    routesByName[newroute.referredTo]=newroute
-            return routesByName, routes
-        try:
-            if self.inputZip is None:
-                with open("routes.txt",encoding="utf-8") as routesfile:
-                    self.routesByName,self.routes=process(routesfile,self.selectedRoutes)
-            else:
-                self.routesByName,self.routes=process(openFileInZip(self.inputZip,"routes.txt"),self.selectedRoutes)
-        except (FileNotFoundError,BaseException) as ex:
-            handleException(ex)
-    def readTrips(self):
+        routestxt=openCsv(getFile("routes.txt",inputZip))
+        headers=next(routestxt)
+        routeIdColumn=headers.index("route_id")
+        routeAgencyColumn=headers.index("agency_id")
+        routeShortnameColumn=headers.index("route_short_name")
+        routeLongnameColumn=headers.index("route_long_name")
+        routeReferredToColumn=headers.index(_routeIdColumn)
+        for routerow in routestxt:
+            if self.selectedRoutes is None or 0==len(self.selectedRoutes) or routerow[routeReferredToColumn] in self.selectedRoutes:
+                newroute=Route(routerow[routeIdColumn],routerow[routeAgencyColumn],routerow[routeShortnameColumn],routerow[routeLongnameColumn],routerow[routeReferredToColumn])
+                self.routes[newroute.id]=newroute
+    def readTrips(self,inputZip):
         """read trips.txt from GTFS directory, and assign trips to schedules ("trip" being a list of stops)."""
-        def process(tripsfile,routes):
-            trips={}
-            tripstxt=openCsv(tripsfile)
-            for triprow in tripstxt:
-                if triprow["route_id"] in routes:
-                    trips[triprow["trip_id"]]=Trip(triprow)
-            return trips
-        try:
-            if self.inputZip is None:
-                with open("trips.txt",encoding="utf-8") as tripsfile:
-                    self.trips=process(tripsfile,self.routes)
-            else:
-                self.trips=process(openFileInZip(self.inputZip,"trips.txt"),self.routes)
-        except (FileNotFoundError,BaseException) as ex:
-            handleException(ex)
-    def readStops(self):
-        """read stop_times.txt from GTFS directory, and assign stops to trips of selected routes, and name stops."""
-        def processStoptimesFile(stoptimesfile,trips):
-            stops={}
-            stoptimestxt=openCsv(stoptimesfile)
-            for stoprow in stoptimestxt:
-                if stoprow["trip_id"] in trips and "1"!=stoprow["pickup_type"] and "1"!=stoprow["drop_off_type"]:
-                    trip=trips[stoprow["trip_id"]]
-                    stop=Stop(stoprow)
-                    trip.addStop(stop)
-                    stops[stoprow["stop_id"]]=None
-            return stops
-        def processStopsFile(stopsfile,stops):
-            stopstxt=openCsv(stopsfile)
-            for stoprow in stopstxt:
-                if stoprow["stop_id"] in stops:
-                    stopname=stoprow["stop_name"]
-                    if stopname.lower().endswith(" station"):
-                        stopname=stopname[:-8]
-                    stops[stoprow["stop_id"]]=stopname
-        stops=None
-        try:
-            if self.inputZip is None:
-                with open("stop_times.txt",encoding="utf-8") as stoptimesfile:
-                    self.stops=processStoptimesFile(stoptimesfile,self.trips)
-            else:
-                self.stops=processStoptimesFile(openFileInZip(self.inputZip,"stop_times.txt"),self.trips)
-        except (FileNotFoundError,BaseException) as ex:
-            handleException(ex)
-        try:
-            if self.inputZip is None:
-                with open("stops.txt",encoding="utf-8") as stopsfile:
-                    processStopsFile(stopsfile,self.stops)
-            else:
-                processStopsFile(openFileInZip(self.inputZip,"stops.txt"),self.stops)
-        except (FileNotFoundError,BaseException) as ex:
-            handleException(ex)
-    def readSchedules(self):
-        """read calendar.txt (daily regularly scheduled service) and calendar_dates.txt (if available) from GTFS directory. return dictionary of regularly scheduled weekday and specific dates the schedule is valid for."""
-        def processCalendar(calendar,dates):
-            day=datetime.timedelta(days=1)
-            caltxt=openCsv(calendar)
-            for calrow in caltxt:
-                testdate=parseDate(calrow["start_date"])
-                enddate=parseDate(calrow["end_date"])
-                # sometimes there are schedules that should really be exceptions
-                # (since they are only valid for one day),
-                # and should not be confused with regular service
-                if "1"==calrow["sunday"] and calrow["start_date"]!=calrow["end_date"]:
-                    dates[0].append(calrow["service_id"])
-                if "1"==calrow["monday"] and calrow["start_date"]!=calrow["end_date"]:
-                    dates[1].append(calrow["service_id"])
-                if "1"==calrow["tuesday"] and calrow["start_date"]!=calrow["end_date"]:
-                    dates[2].append(calrow["service_id"])
-                if "1"==calrow["wednesday"] and calrow["start_date"]!=calrow["end_date"]:
-                    dates[3].append(calrow["service_id"])
-                if "1"==calrow["thursday"] and calrow["start_date"]!=calrow["end_date"]:
-                    dates[4].append(calrow["service_id"])
-                if "1"==calrow["friday"] and calrow["start_date"]!=calrow["end_date"]:
-                    dates[5].append(calrow["service_id"])
-                if "1"==calrow["saturday"] and calrow["start_date"]!=calrow["end_date"]:
-                    dates[6].append(calrow["service_id"])
-                while testdate != enddate:
-                    datestr=formatDate(testdate)
-                    if datestr not in dates:
-                        dates[datestr]=[]
-                    dayofweek=testdate.weekday()
-                    if (0==dayofweek and "1"==calrow["monday"]) or \
-                        (1==dayofweek and "1"==calrow["tuesday"]) or \
-                        (2==dayofweek and "1"==calrow["wednesday"]) or \
-                        (3==dayofweek and "1"==calrow["thursday"]) or \
-                        (4==dayofweek and "1"==calrow["friday"]) or \
-                        (5==dayofweek and "1"==calrow["saturday"]) or \
-                        (6==dayofweek and "1"==calrow["sunday"]):
-                        dates[datestr].append(calrow["service_id"])
-                    testdate+=day
-        def processDates(calendar,dates):
-            caltxt=openCsv(calendar)
-            for calrow in caltxt:
-                dateexc=parseDate(calrow["date"])
-                datestr=formatDate(dateexc)
-                if "1"==calrow["exception_type"]:
-                    dates[datestr].append(calrow["service_id"])
-                elif "2"==calrow["exception_type"]:
-                    dates[datestr].remove(calrow["service_id"])
-        self.dates={0:[],1:[],2:[],3:[],4:[],5:[],6:[]}
-        try:
-            if self.inputZip is None:
-                with open("calendar.txt",encoding="utf-8") as calendar:
-                    processCalendar(calendar,self.dates)
-            else:
-                processCalendar(openFileInZip(self.inputZip,"calendar.txt"),self.dates)
-        except (FileNotFoundError,BaseException) as ex:
-            handleException(ex)
-        # exceptions to regularly scheduled service
-        try:
-            if self.inputZip is None:
-                with open("calendar_dates.txt",encoding="utf-8") as calendar:
-                    processDates(calendar,self.dates)
-            else:
-                processDates(openFileInZip(self.inputZip,"calendar_dates.txt"),self.dates)
-        except (FileNotFoundError,BaseException) as ex:
-            handleException(ex,
-                "File "+ex.filename+" does not exist. Exceptions to regularly scheduled service will not be considered.",
-                "There was a problem opening "+ex.filename+". Exceptions to regularly scheduled service will not be considered.",
-                False)
-        return self.dates
-    def buildDataModel(self):
-        """gather trips into route schedules, delete unneccessary schedules, and sort trips within route schedules."""
-        self.schedules=[]
-        for trip in self.trips.values():
+        trips={}
+        tripstxt=openCsv(getFile("trips.txt",inputZip))
+        headers=next(tripstxt)
+        tripRouteColumn=headers.index("route_id")
+        tripServiceColumn=headers.index("service_id")
+        tripIdColumn=headers.index("trip_id")
+        tripDirectionColumn=headers.index("trip_headsign")
+        for triprow in tripstxt:
+            if triprow[tripRouteColumn] in self.routes:
+                trips[triprow[tripIdColumn]]=Trip(triprow[tripRouteColumn],triprow[tripServiceColumn],triprow[tripIdColumn],triprow[tripDirectionColumn])
+        for trip in trips.values():
             route=self.routes[trip.route]
             if trip.service not in route.schedules:
                 route.schedules[trip.service]={}
             if trip.service not in self.schedules:
                 self.schedules.append(trip.service)
-            trip.finalize(self.excludeStops,self.routes[trip.route].referredTo)
             if trip.direction not in route.schedules[trip.service]:
                 route.schedules[trip.service][trip.direction]=[]
             route.schedules[trip.service][trip.direction].append(trip)
+    def _processStopsFiles(stoptimesfile,route):
+        trips=route.getAllTrips()
+        stoptimestxt=openCsv(stoptimesfile)
+        headers=next(stoptimestxt)
+        stopTimeColumn=headers.index("arrival_time")
+        stopSequenceColumn=headers.index("stop_sequence")
+        stopIdColumn=headers.index("stop_id")
+        tripIdColumn=headers.index("trip_id")
+        pickupColumn=headers.index("pickup_type")
+        dropoffColumn=headers.index("drop_off_type")
+        for stoprow in stoptimestxt:
+            if stoprow[tripIdColumn] in trips and "1"!=stoprow[pickupColumn] and "1"!=stoprow[dropoffColumn]:
+                trip=trips[stoprow[tripIdColumn]]
+                stop=Stop(stoprow[stopTimeColumn],stoprow[stopSequenceColumn],stoprow[stopIdColumn])
+                trip.addStop(stop)
+        return route
+    def _updateRoutes(self,routes):
+        for route in routes:
+            self.routes[route.id]=route
+    def readStops(self,inputZip):
+        """read stop_times.txt from GTFS directory, and assign stops to trips of selected routes, and name stops."""
+        try:
+            stoptimes=getFile("stop_times.txt",inputZip)
+            poolcount=min(len(self.routes),cpu_count())
+            with Pool(poolcount) as pool:
+                asyncresult=pool.starmap_async(GtfsProcessor._processStopsFiles,[(stoptimes,route) for route in self.routes.values()],callback=self._updateRoutes)
+                stops={}
+                stopstxt=openCsv(getFile("stops.txt",inputZip))
+                headers=next(stopstxt)
+                stopNameColumn=headers.index("stop_name")
+                stopIdColumn=headers.index("stop_id")
+                for stoprow in stopstxt:
+                    stopname=stoprow[stopNameColumn]
+                    if stopname.lower().endswith(" station"):
+                        stopname=stopname[:-8]
+                    stops[stoprow[stopIdColumn]]=stopname
+                asyncresult.wait()
+                for route in self.routes.values():
+                    for sched in route.schedules.values():
+                        for destination in sched.values():
+                            for trip in destination:
+                                for stop in trip.stops:
+                                    stop.name=stops[stop.stopid]
+        except (FileNotFoundError,BaseException) as ex:
+            handleException(ex)
+    def readSchedules(self,inputZip):
+        """read calendar.txt (daily regularly scheduled service) and calendar_dates.txt (if available) from GTFS directory. return dictionary of regularly scheduled weekday and specific dates the schedule is valid for."""
+        self.dates={0:[],1:[],2:[],3:[],4:[],5:[],6:[]}
+        day=datetime.timedelta(days=1)
+        caltxt=openCsv(getFile("calendar.txt",inputZip))
+        headers=next(caltxt)
+        startDateColumn=headers.index("start_date")
+        endDateColumn=headers.index("end_date")
+        serviceIdColumn=headers.index("service_id")
+        mondayColumn=headers.index("monday")
+        tuesdayColumn=headers.index("tuesday")
+        wednesdayColumn=headers.index("wednesday")
+        thursdayColumn=headers.index("thursday")
+        fridayColumn=headers.index("friday")
+        saturdayColumn=headers.index("saturday")
+        sundayColumn=headers.index("sunday")
+        for calrow in caltxt:
+            testdate=parseDate(calrow[startDateColumn])
+            enddate=parseDate(calrow[endDateColumn])
+            # sometimes there are schedules that should really be exceptions
+            # (since they are only valid for one day),
+            # and should not be confused with regular service
+            if "1"==calrow[sundayColumn] and calrow[startDateColumn]!=calrow[endDateColumn]:
+                self.dates[0].append(calrow[serviceIdColumn])
+            if "1"==calrow[mondayColumn] and calrow[startDateColumn]!=calrow[endDateColumn]:
+                self.dates[1].append(calrow[serviceIdColumn])
+            if "1"==calrow[tuesdayColumn] and calrow[startDateColumn]!=calrow[endDateColumn]:
+                self.dates[2].append(calrow[serviceIdColumn])
+            if "1"==calrow[wednesdayColumn] and calrow[startDateColumn]!=calrow[endDateColumn]:
+                self.dates[3].append(calrow[serviceIdColumn])
+            if "1"==calrow[thursdayColumn] and calrow[startDateColumn]!=calrow[endDateColumn]:
+                self.dates[4].append(calrow[serviceIdColumn])
+            if "1"==calrow[fridayColumn] and calrow[startDateColumn]!=calrow[endDateColumn]:
+                self.dates[5].append(calrow[serviceIdColumn])
+            if "1"==calrow[saturdayColumn] and calrow[startDateColumn]!=calrow[endDateColumn]:
+                self.dates[6].append(calrow[serviceIdColumn])
+            while testdate != enddate:
+                datestr=formatDate(testdate)
+                if datestr not in self.dates:
+                    self.dates[datestr]=[]
+                dayofweek=testdate.weekday()
+                if (0==dayofweek and "1"==calrow[mondayColumn]) or \
+                    (1==dayofweek and "1"==calrow[tuesdayColumn]) or \
+                    (2==dayofweek and "1"==calrow[wednesdayColumn]) or \
+                    (3==dayofweek and "1"==calrow[thursdayColumn]) or \
+                    (4==dayofweek and "1"==calrow[fridayColumn]) or \
+                    (5==dayofweek and "1"==calrow[saturdayColumn]) or \
+                    (6==dayofweek and "1"==calrow[sundayColumn]):
+                    self.dates[datestr].append(calrow[serviceIdColumn])
+                testdate+=day
+
+        # exceptions to regularly scheduled service
+        caltxt=openCsv(getFile("calendar_dates.txt",inputZip,shouldExitOnError=False))
+        headers=next(caltxt)
+        dateColumn=headers.index("date")
+        exceptionColumn=headers.index("exception_type")
+        serviceIdColumn=headers.index("service_id")
+        if caltxt is None:
+            return
+        for calrow in caltxt:
+            dateexc=parseDate(calrow[dateColumn])
+            datestr=formatDate(dateexc)
+            if "1"==calrow[exceptionColumn]:
+                if datestr not in self.dates:
+                    self.dates[datestr]=[]
+                self.dates[datestr].append(calrow[serviceIdColumn])
+            elif "2"==calrow[exceptionColumn] and datestr in self.dates and calrow[serviceIdColumn] in self.dates[datestr]:
+                self.dates[datestr].remove(calrow[serviceIdColumn])
+    def buildDataModel(self):
+        """gather trips into route schedules, delete unneccessary schedules, and sort trips within route schedules."""
         for dayschedules in self.dates.values():
             for schedule in dayschedules[:]:
                 if schedule not in self.schedules:
                     dayschedules.remove(schedule)
         for route in self.routes.values():
+            route.finalize(self.excludeStops)
             for schedule in route.schedules.values():
                 for destination in schedule.values():
                     destination.sort()
-            route.finalize(self.stops)
     def formatOutputVars(self):
         """create output variable object for insertion into template."""
         self.outputVars={"title":self.agencyName,"headerTitle":self.agencyName,"generationDate":email.utils.formatdate(localtime=True)}
         routeSelect=""
-        tableTemplate="\t<section id='{0}'>\n\t\t<h1>{1}</h1>\n{2}\t</section>\n"
-        activeTemplate="\t\t<table><caption>{0}</caption><thead></thead><tbody></tbody></table>\n"
         tables=""
-        for routename in self.selectedRoutes if len(self.selectedRoutes)>0 else self.routesByName.keys():
-            route=self.routesByName[routename]
-            routeSelect+="\t<input type='radio' name='line' value='{1}' id='radio-{1}'/><label for='radio-{1}'>{0}</label>\n".format(route.shortname,route.id)
-            routetables=""
-            for line in sorted(route.stops.keys()):
-                routetables+=activeTemplate.format(line)
-            tables+=tableTemplate.format(route.id,route.longname,routetables)
+        tableTemplate="\t<input type='radio' name='line' value='{0}' id='radio-{0}'/>\n\t<section id='{0}'>\n\t\t<h1>{1}</h1>\n\t</section>\n"
+        for route in (route for route in self.routes.values() if len(self.selectedRoutes) is 0 or route.referredTo in self.selectedRoutes):
+            routeSelect+="\t<label for='radio-{1}'>{0}</label>\n".format(route.shortname,route.id)
+            tables+=tableTemplate.format(route.id,route.longname)
         self.outputVars["ttimesettings"]=removeSpaces(json.dumps({"selectedRoutes":self.selectedRoutes,"excludeStops":self.excludeStops,"_12hourClock":self._12hourClock}))
         self.outputVars["html"]=routeSelect+tables
         self.outputVars["javascript"]="const dates={0};\nconst routes={1};\nconst _12hourClock={2};\n".format(removeSpaces(self.dates.__str__()),removeSpaces(self.routes.__str__().replace("'\\x00'","null")),str(self._12hourClock).lower())
@@ -504,8 +498,8 @@ class GtfsProcessor:
                     template+=line
         except (FileNotFoundError,BaseException) as ex:
             handleException(ex,
-                "File "+ex.filename+" does not exist. This is the HTML template to export the data.",
-                "There was a problem opening "+ex.filename+". This is the HTML template to export the data.")
+                "File {0} does not exist. This is the HTML template to export the data.".format(ex.filename),
+                "There was a problem opening {0}. This is the HTML template to export the data.".format(ex.filename))
         if self.css is not None:
             template=template.replace('<link rel="stylesheet" href="t-time.css" />',self.css,1)
         self.template=Template(template)
@@ -515,7 +509,7 @@ class GtfsProcessor:
             with open(self.outputName,"w",encoding="utf-8") as output:
                 output.write(self.template.substitute(self.outputVars))
         except BaseException as ex:
-            print("There was a problem writing "+ex.filename+". This was to be the output file, but it cannot be created or written, or something.")
+            print("There was a problem writing {0}. This was to be the output file, but it cannot be created or written, or something.".format(ex.filename))
             exit(73)
         return self.outputName
     def completeOutput(self):
@@ -523,20 +517,20 @@ class GtfsProcessor:
         self.formatOutputVars()
         self.readHtmlTemplate()
         return self.writeHtml()
-    def run(self):
+    def run(self,inputZip):
         """automatically run things the way they were meant to be run with (hopefully reasonable) defaults."""
-        self.readAgencyName()
+        self.readAgencyName(inputZip)
         oldFile=self.readSettings()
         if oldFile is not None:
             print("Found old file {0} and imported old settings.".format(oldFile))
-        self.readRoutes()
+        self.readRoutes(inputZip)
         print("Routes read")
-        self.readTrips()
+        self.readTrips(inputZip)
         print("Trips read")
         print("Reading stops (please stand by)")
-        self.readStops()
+        self.readStops(inputZip)
         print("Stops read")
-        self.readSchedules()
+        self.readSchedules(inputZip)
         self.buildDataModel()
         print("Schedules assigned")
         print("Wrote {0} as final output. Have a nice trip!".format(self.completeOutput()))
@@ -544,6 +538,6 @@ class GtfsProcessor:
 if "__main__"==__name__:
     if len(argv)>1:
         with zipfile.ZipFile(argv[1]) as inputZipObject:
-            GtfsProcessor(inputZip=inputZipObject).run()
+            GtfsProcessor().run(inputZipObject)
     else:
         GtfsProcessor().run()

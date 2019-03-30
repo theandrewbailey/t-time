@@ -43,18 +43,19 @@ class GtfsProcessorGui(tkinter.Tk):
         self.destroy()
 class RouteSelecter(tkinter.ttk.Frame):
     """subclasses tkinter.ttk.Frame for route selection"""
-    def __init__(self,master):
+    def __init__(self,master,inputZip):
         """extends tkinter.ttk.Frame.__init__"""
         tkinter.ttk.Frame.__init__(self,master)
+        self.inputZip=inputZip
         self.master=master
         self.master.wm_title("Select routes - "+_baseTitle)
         self.selectedRoutes,self.master.gtfs.selectedRoutes=self.master.gtfs.selectedRoutes,()
-        self.master.gtfs.readRoutes()
+        self.master.gtfs.readRoutes(inputZip)
         self.master.gtfs.selectedRoutes=self.selectedRoutes
         self.selectRoutes=MultiSelecter(self)
-        routenames=[x.referredTo for x in self.master.gtfs.routes.values()]
-        routenames.sort()
-        self.selectRoutes.populate(self.master.gtfs.agencyName,routenames,self.master.gtfs.selectedRoutes)
+        self.routenames=[route.referredTo for route in self.master.gtfs.routes.values()]
+        self.routenames.sort()
+        self.selectRoutes.populate(self.master.gtfs.agencyName,self.routenames,self.master.gtfs.selectedRoutes)
         self.selectRoutes.selecter.configure(width=60)
         self.selectRoutes.selecter.pack(fill=tkinter.BOTH,expand=True)
         self.selectRoutes.pack(fill=tkinter.BOTH,expand=True,padx=_padding,pady=_padding)
@@ -68,10 +69,11 @@ class RouteSelecter(tkinter.ttk.Frame):
     def finishLogic(self):
         """finish logic based on selected routes, and passes control to StopSelecter"""
         self.master.gtfs.selectedRoutes=self.selectRoutes.getSelected()
-        self.master.gtfs.readRoutes()
-        self.master.gtfs.readTrips()
-        self.master.gtfs.readStops()
-        self.master.gtfs.readSchedules()
+        self.master.gtfs.routes={}
+        self.master.gtfs.readRoutes(inputZip)
+        self.master.gtfs.readTrips(inputZip)
+        self.master.gtfs.readStops(inputZip)
+        self.master.gtfs.readSchedules(inputZip)
         self.exclude,self.master.gtfs.excludeStops=self.master.gtfs.excludeStops,{}
         self.master.gtfs.buildDataModel()
         self.master.gtfs.excludeStops=self.exclude
@@ -88,33 +90,43 @@ class StopSelecter(tkinter.ttk.Frame):
         self.master.wm_title("Select stops - "+_baseTitle)
         self.stopSelecters={}
         self.rows=[tkinter.ttk.Frame(self)]
-        for routeName in self.master.gtfs.selectedRoutes:
-            route=self.master.gtfs.routesByName[routeName]
+        self.selectedRoutes=(route for route in self.master.gtfs.routes.values() if len(self.master.gtfs.selectedRoutes) is 0 or route.referredTo in self.master.gtfs.selectedRoutes)
+        for route in self.selectedRoutes:
             stops=route.getAllStops()
-            displayList=t_time.orderDistinctValues(stops)
-            includeList=list(displayList[:])
-            for stopid,stopname in stops.items():
-                if routeName in self.master.gtfs.excludeStops and stopid in self.master.gtfs.excludeStops[routeName]:
-                    try:includeList.remove(stopname)
-                    except ValueError:pass
+            displayList=[]
+            includeList=[]
+            for stopid,stop in stops.items():
+                if stop.name in displayList: continue
+                displayList.append(stop.name)
+                if route.referredTo not in self.master.gtfs.excludeStops or stopid not in self.master.gtfs.excludeStops[route.referredTo]:
+                    includeList.append(stop.name)
             if 4<len(self.rows[-1].winfo_children()):
                 self.rows[-1].pack(side=tkinter.TOP,anchor=tkinter.N,padx=_padding)
                 self.rows.append(tkinter.ttk.Frame(self))
-            self.stopSelecters[routeName]=MultiSelecter(self.rows[-1]).populate("{0} ({1})".format(route.shortname,route.longname),displayList,includeList)
+            self.stopSelecters[route.referredTo]=MultiSelecter(self.rows[-1]).populate("{0} ({1})".format(route.shortname,route.longname),displayList,includeList)
+            self.stopSelecters[route.referredTo].route=route
         self.rows[-1].pack(side=tkinter.LEFT,anchor=tkinter.S,padx=_padding,pady=_padding)
         self.pack(side=tkinter.TOP)
     def next(self):
         """finish logic based on selected stops, writes HTML, and exits application"""
+        self.pbar=tkinter.ttk.Progressbar(self.master,orient="horizontal",mode="indeterminate")
+        self.pbar.pack(anchor=tkinter.E,side=tkinter.BOTTOM,fill=tkinter.X,expand=True,padx=_padding,pady=_padding)
+        self.pack(side=tkinter.TOP)
+        self.pbar.start()
+        threading.Thread(None,self.finishLogic).start()
+    def finishLogic(self):
         for routeName,selecter in self.stopSelecters.items():
             selected=selecter.getSelected()
-            route=self.master.gtfs.routesByName[routeName]
             excludeids=[]
-            for stopid,stopname in route.getAllStops().items():
-                if stopname not in selected:
+            for stopid,stop in selecter.route.getAllStops().items():
+                if stop.name not in selected:
                     excludeids.append(stopid)
             self.master.gtfs.excludeStops[routeName]=excludeids
-            route.reset()
+            selecter.route.reset()
+        self.master.gtfs.readTrips(inputZip)
+        self.master.gtfs.readStops(inputZip)
         self.master.gtfs.buildDataModel()
+        self.pbar.stop()
         tkinter.messagebox.showinfo(_baseTitle,"Wrote {0} as final output. Have a nice trip!".format(self.master.gtfs.completeOutput()),parent=self.master)
         _root.destroy()
 class MultiSelecter(tkinter.ttk.LabelFrame):
@@ -162,19 +174,19 @@ if "__main__"==__name__:
             _root.close()
             exit()
         zipname=tkinter.filedialog.askopenfilename(parent=_root,title="Select GTFS zip file",filetypes=(("Zip files","*.zip"),))
-    with ZipFile(zipname,'r') as inputZipObject:
-        _root.gtfs=t_time.GtfsProcessor(inputZip=inputZipObject)
-        _root.gtfs.readAgencyName()
+    with ZipFile(zipname,'r') as inputZip:
+        _root.gtfs=t_time.GtfsProcessor()
+        _root.gtfs.readAgencyName(inputZip)
         _root.gtfs.outputName=tkinter.filedialog.asksaveasfilename(parent=_root,title="Select output file",initialfile=_root.gtfs.outputName,filetypes=(("HTML files","*.html"),))
         while ""==_root.gtfs.outputName:
             _root.gtfs.outputName=None
-            _root.gtfs.readAgencyName()
+            _root.gtfs.readAgencyName(inputZip)
             if not tkinter.messagebox.askyesno("Select output file","An output file will be written, and settings can be read if it already exists. Continue?",parent=_root):
                 _root.close()
                 exit()
             _root.gtfs.outputName=tkinter.filedialog.asksaveasfilename(parent=_root,title="Select output file",initialfile=_root.gtfs.outputName,filetypes=(("HTML files","*.html"),))
         _root.gtfs.readSettings()
-        _root.mainframe=RouteSelecter(_root)
+        _root.mainframe=RouteSelecter(_root,inputZip)
         _root.mainloop()
 
 
